@@ -25,6 +25,17 @@ if [ -f "${selfFolderPath}.defaults.sh" ]; then
 	. "${selfFolderPath}.defaults.sh"
 fi
 
+# Include config file extension
+if [ -f "${selfFolderPath}extend_config_file.sh" ]; then
+	. "${selfFolderPath}extend_config_file.sh"
+fi
+
+# Include config file functions
+. "${selfFolderPath}scripts/bashUtils/load_config_file.sh"
+
+# Load config file
+loadConfigFile
+
 # Parse variables
 gen_doc=1
 gen_c=0
