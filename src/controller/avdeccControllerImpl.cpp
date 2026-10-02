@@ -224,17 +224,28 @@ void ControllerImpl::addCompatibilityFlag(ControllerImpl const* const controller
 
 void ControllerImpl::setMisbehavingCompatibilityFlag(ControllerImpl const* const controller, ControlledEntityImpl& controlledEntity, std::string const& specClause, std::string const& message) noexcept
 {
-	// If entity was not already marked as misbehaving
-	if (!controlledEntity.getCompatibilityFlags().test(ControlledEntity::CompatibilityFlag::Misbehaving))
-	{
-		// A misbehaving device is not IEEE1722.1 compatible (so also not Milan compatible)
-		removeCompatibilityFlag(controller, controlledEntity, ControlledEntity::CompatibilityFlag::IEEE17221, specClause, message);
+	auto const oldFlags = controlledEntity.getCompatibilityFlags();
 
-		// Now set the Misbehaving flag
-		auto flags = controlledEntity.getCompatibilityFlags();
-		flags.set(ControlledEntity::CompatibilityFlag::Misbehaving);
-		LOG_CONTROLLER_WARN(controlledEntity.getEntity().getEntityID(), "Entity is sending incoherent values (misbehaving)");
-		controlledEntity.setCompatibilityFlags(flags);
+	// If entity was not already marked as misbehaving
+	if (!oldFlags.test(ControlledEntity::CompatibilityFlag::Misbehaving))
+	{
+		auto const entityID = controlledEntity.getEntity().getEntityID();
+		auto const oldMilanCompatibilityVersion = controlledEntity.getMilanCompatibilityVersion();
+		auto newFlags = oldFlags;
+
+		LOG_CONTROLLER_COMPAT(entityID, "[{}] {}", specClause, message);
+		LOG_CONTROLLER_WARN(entityID, "Entity is sending incoherent values (misbehaving)");
+
+		// A misbehaving device is not IEEE1722.1 compatible (so also not Milan compatible), all changes are applied at once so a single event describes them
+		newFlags.reset(ControlledEntity::CompatibilityFlag::IEEE17221);
+		newFlags.reset(ControlledEntity::CompatibilityFlag::Milan);
+		newFlags.set(ControlledEntity::CompatibilityFlag::Misbehaving);
+		auto const newMilanCompatibilityVersion = entity::model::MilanVersion{};
+		controlledEntity.setCompatibilityFlags(newFlags);
+		controlledEntity.setMilanCompatibilityVersion(newMilanCompatibilityVersion);
+
+		// Create a compatibilityChanged event (even without a controller, so the changes detected while validating the entity are also recorded)
+		controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ oldFlags, oldMilanCompatibilityVersion, newFlags, newMilanCompatibilityVersion, specClause, message });
 
 		if (controller)
 		{
@@ -242,7 +253,7 @@ void ControllerImpl::setMisbehavingCompatibilityFlag(ControllerImpl const* const
 			// Entity was advertised to the user, notify observers
 			if (controlledEntity.wasAdvertised())
 			{
-				controller->notifyObserversMethod<Controller::Observer>(&Controller::Observer::onCompatibilityChanged, controller, &controlledEntity, flags, controlledEntity.getMilanCompatibilityVersion());
+				controller->notifyObserversMethod<Controller::Observer>(&Controller::Observer::onCompatibilityChanged, controller, &controlledEntity, newFlags, newMilanCompatibilityVersion);
 			}
 		}
 	}
