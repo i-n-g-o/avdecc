@@ -102,6 +102,11 @@ C language bindings over la_avdecc library.
   * Run a proper CMake command to generate a Xcode solution (or any other CMake generator matching your build toolchain)
   * Open the generated Xcode solution (or your other CMake generated files)
   * Compile everything from Xcode (or compile using your toolchain)
+- MacOSNCap protocol interface in the discovery examples (`-DBUILD_AVDECC_INTERFACE_MAC_NCAP=TRUE`):
+  * This protocol interface requires the restricted `com.apple.developer.networking.custom-protocol` entitlement, which is only granted if a matching provisioning profile is embedded in the code (otherwise macOS kills the process at launch)
+  * Create a macOS provisioning profile for the `com.l-acoustics.avdecc.discovery` App ID (with the *Custom Network Protocol* capability), then declare it in the `.config` file (`provisioning_profile=<path to .provisionprofile>`, see [the sample config file](scripts/bashUtils/samples/.config.sample)) or pass it to *gen_cmake.sh* with `-provisioning-profile <path to .provisionprofile>`. The signing identity is auto-detected from the profile
+  * *Discovery* and *SimpleDiscovery* share this bundle identifier, so the same profile is used for both. They are built as app bundles (a provisioning profile can only be embedded in a bundle) but remain console programs: run them from a terminal with `Discovery.app/Contents/MacOS/Discovery` (or `SimpleDiscovery.app/Contents/MacOS/SimpleDiscovery`)
+  * Without a provisioning profile, the examples are signed without the entitlement and can still be used with the other protocol interfaces
 
 ### Linux
 - Using the provided bash script (*gen_cmake.sh*):

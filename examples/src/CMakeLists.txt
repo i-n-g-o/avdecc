@@ -77,6 +77,39 @@ endif()
 
 # Controller library examples
 if(BUILD_AVDECC_CONTROLLER)
+	# Using the MacOSNCap ProtocolInterface requires the com.apple.developer.networking.custom-protocol entitlement, which is a restricted entitlement: macOS kills the process at launch unless a provisioning profile allowing it is embedded in the code.
+	# A provisioning profile can only be embedded in a bundle, so the discovery examples are built as app bundles when MacOSNCap is enabled.
+	# They remain regular console programs, just run <Name>.app/Contents/MacOS/<Name> from a terminal (stdin, stdout and curses work as usual).
+	# All discovery examples share the same bundle identifier, so the provisioning profile of the project (CU_PROVISIONING_PROFILE, from the 'provisioning_profile' option of the config file) is used for all of them.
+	# When avdecc is not the top level project, CU_PROVISIONING_PROFILE is the profile of the parent project (for another App ID) and is not used.
+	set(DISCOVERY_EXAMPLES_BUNDLE_IDENTIFIER "com.l-acoustics.avdecc.discovery")
+	set(DISCOVERY_EXAMPLES_USE_NCAP FALSE)
+	if(APPLE AND BUILD_AVDECC_INTERFACE_MAC_NCAP)
+		if(ENABLE_CODE_SIGNING AND CU_PROVISIONING_PROFILE AND LA_avdecc_IS_TOP_LEVEL)
+			set(DISCOVERY_EXAMPLES_USE_NCAP TRUE)
+		else()
+			message(WARNING "The discovery examples will not be able to use the MacOSNCap ProtocolInterface: it requires code signing and a provisioning profile for the '${DISCOVERY_EXAMPLES_BUNDLE_IDENTIFIER}' App ID ('provisioning_profile' option of the config file, or CU_PROVISIONING_PROFILE).")
+		endif()
+	endif()
+
+	# Setup a discovery example so it can use the MacOSNCap ProtocolInterface (see above).
+	# Sets OUT_DEPLOY_OPTIONS to the additional options to pass to cu_setup_deploy_runtime.
+	function(setup_discovery_example_for_ncap TARGET_NAME OUT_DEPLOY_OPTIONS)
+		set(_DEPLOY_OPTIONS "")
+		if(APPLE AND BUILD_AVDECC_INTERFACE_MAC_NCAP)
+			set_target_properties(${TARGET_NAME} PROPERTIES
+				MACOSX_BUNDLE TRUE
+				MACOSX_BUNDLE_INFO_PLIST "${CU_ROOT_DIR}/examples/data/Discovery-Info.plist.in"
+				MACOSX_BUNDLE_GUI_IDENTIFIER "${DISCOVERY_EXAMPLES_BUNDLE_IDENTIFIER}"
+			)
+			# Only claim the restricted entitlement when the provisioning profile is embedded, otherwise the process would be killed at launch (preventing the use of the other ProtocolInterfaces)
+			if(DISCOVERY_EXAMPLES_USE_NCAP)
+				list(APPEND _DEPLOY_OPTIONS CODESIGN_ENTITLEMENTS "${CU_ROOT_DIR}/examples/data/Discovery.entitlements" PROVISION_PROFILE "${CU_PROVISIONING_PROFILE}")
+			endif()
+		endif()
+		set(${OUT_DEPLOY_OPTIONS} ${_DEPLOY_OPTIONS} PARENT_SCOPE)
+	endfunction()
+
 	# Discovery
 	add_executable(Discovery discovery.cpp utils.cpp utils.hpp)
 	set_target_properties(Discovery PROPERTIES FOLDER "Examples/Controller")
@@ -87,38 +120,22 @@ if(BUILD_AVDECC_CONTROLLER)
 	target_link_libraries(Discovery PRIVATE ${CURSES_LINK_OPTIONS})
 	# Setup common options
 	cu_setup_executable_options(Discovery)
+	# Setup MacOSNCap support
+	setup_discovery_example_for_ncap(Discovery DISCOVERY_DEPLOY_OPTIONS)
 	# Deploy and install target and its runtime dependencies (call this AFTER ALL dependencies have been added to the target)
-	cu_setup_deploy_runtime(Discovery ${INSTALL_EXAMPLE_FLAG} ${SIGN_FLAG})
+	cu_setup_deploy_runtime(Discovery ${INSTALL_EXAMPLE_FLAG} ${SIGN_FLAG} ${DISCOVERY_DEPLOY_OPTIONS})
 
-	# SimpleDiscovery - minimal CLI discovery sample (primarily intended for MacOSNCap testing).
-	# On Apple platforms it is built as a MACOSX_BUNDLE so that a provisioning profile (required by
-	# com.apple.developer.networking.custom-protocol entitlement) can be embedded into the .app.
+	# SimpleDiscovery - minimal CLI discovery sample (primarily intended for MacOSNCap testing)
 	add_executable(SimpleDiscovery simpleDiscovery.cpp)
 	set_target_properties(SimpleDiscovery PROPERTIES FOLDER "Examples/Controller")
+	# Using controller library
 	target_link_libraries(SimpleDiscovery PRIVATE la_avdecc_controller_cxx)
+	# Setup common options
 	cu_setup_executable_options(SimpleDiscovery)
-	set(_SD_DEPLOY_OPTS "")
-	if(APPLE)
-		set_target_properties(SimpleDiscovery PROPERTIES
-			MACOSX_BUNDLE TRUE
-			MACOSX_BUNDLE_INFO_PLIST "${CU_ROOT_DIR}/examples/data/SimpleDiscovery-Info.plist"
-		)
-		if(BUILD_AVDECC_INTERFACE_MAC_NCAP)
-			# SIMPLEDISCOVERY_PROVISION_PROFILE required for com.apple.developer.networking.custom-protocol entitlement, which is required to use the MacOSNCap ProtocolInterface. Print a warning if not set.
-			if(NOT SIMPLEDISCOVERY_PROVISION_PROFILE)
-				message(WARNING "SIMPLEDISCOVERY_PROVISION_PROFILE is not set. The SimpleDiscovery example may not work correctly on macOS without a valid provisioning profile.")
-			endif()
-			# Entitlements, profile, and identity are passed to cu_setup_deploy_runtime which handles everything
-			list(APPEND _SD_DEPLOY_OPTS CODESIGN_ENTITLEMENTS "${CU_ROOT_DIR}/examples/data/SimpleDiscovery.entitlements")
-			if(SIMPLEDISCOVERY_PROVISION_PROFILE)
-				list(APPEND _SD_DEPLOY_OPTS PROVISION_PROFILE "${SIMPLEDISCOVERY_PROVISION_PROFILE}")
-			endif()
-			if(SIMPLEDISCOVERY_SIGN_IDENTITY)
-				list(APPEND _SD_DEPLOY_OPTS CODESIGN_IDENTITY "${SIMPLEDISCOVERY_SIGN_IDENTITY}")
-			endif()
-		endif()
-	endif()
-	cu_setup_deploy_runtime(SimpleDiscovery ${INSTALL_EXAMPLE_FLAG} ${SIGN_FLAG} ${_SD_DEPLOY_OPTS})
+	# Setup MacOSNCap support
+	setup_discovery_example_for_ncap(SimpleDiscovery SIMPLEDISCOVERY_DEPLOY_OPTIONS)
+	# Deploy and install target and its runtime dependencies (call this AFTER ALL dependencies have been added to the target)
+	cu_setup_deploy_runtime(SimpleDiscovery ${INSTALL_EXAMPLE_FLAG} ${SIGN_FLAG} ${SIMPLEDISCOVERY_DEPLOY_OPTIONS})
 
 	if(ENABLE_AVDECC_FEATURE_JSON)
 		# EntityDumper
