@@ -4597,32 +4597,45 @@ void ControllerImpl::checkEnumerationSteps(ControlledEntityImpl* const controlle
 	}
 }
 
+/** Requirement violated by an audio mapping. */
+struct MappingViolation
+{
+	std::string specClause{};
+	std::string message{};
+};
+
+/** Checks the mapping only references a Stream, an Audio Cluster and an Audio Cluster channel that exist in the entity model, as required by IEEE1722.1. */
+static std::optional<MappingViolation> checkMappingReferences(std::uint16_t const maxStreams, model::StreamPortNode const& streamPortNode, entity::model::AudioMapping const& mapping) noexcept
+{
+	if (mapping.streamIndex >= maxStreams)
+	{
+		return MappingViolation{ "IEEE1722.1-2021 - 7.4.44.2.1/7.2.2", "Invalid Mapping received: StreamIndex is greater than maximum number of Streams" };
+	}
+	if (mapping.clusterOffset >= streamPortNode.staticModel.numberOfClusters)
+	{
+		return MappingViolation{ "IEEE1722.1-2021 - 7.4.44.2.1/7.2.13", "Invalid Mapping received: ClusterOffset is greater than cluster in the StreamPort" };
+	}
+	if (auto const clusterIt = streamPortNode.audioClusters.find(streamPortNode.staticModel.baseCluster + mapping.clusterOffset); clusterIt != streamPortNode.audioClusters.end())
+	{
+		if (mapping.clusterChannel >= clusterIt->second.staticModel.channelCount)
+		{
+			return MappingViolation{ "IEEE1722.1-2021 - 7.4.44.2.1/7.2.16", "Invalid Mapping received: ClusterChannel is greater than channels in the AudioCluster" };
+		}
+	}
+	return std::nullopt;
+}
+
 entity::model::AudioMappings ControllerImpl::validateMappings(ControlledEntityImpl& controlledEntity, std::uint16_t const maxStreams, model::StreamPortNode const& streamPortNode, entity::model::AudioMappings const& mappings) const noexcept
 {
 	auto fixedMappings = std::decay_t<decltype(mappings)>{};
 
 	for (auto const& mapping : mappings)
 	{
-		if (mapping.streamIndex >= maxStreams)
+		if (auto const violation = checkMappingReferences(maxStreams, streamPortNode, mapping))
 		{
 			// Flag the entity as "Misbehaving"
-			setMisbehavingCompatibilityFlag(this, controlledEntity, "IEEE1722.1-2021 - 7.4.44.2.1/7.2.2", "Invalid Mapping received: StreamIndex is greater than maximum number of Streams");
+			setMisbehavingCompatibilityFlag(this, controlledEntity, violation->specClause, violation->message);
 			continue;
-		}
-		if (mapping.clusterOffset >= streamPortNode.staticModel.numberOfClusters)
-		{
-			// Flag the entity as "Misbehaving"
-			setMisbehavingCompatibilityFlag(this, controlledEntity, "IEEE1722.1-2021 - 7.4.44.2.1/7.2.13", "Invalid Mapping received: ClusterOffset is greater than cluster in the StreamPort");
-			continue;
-		}
-		if (auto const clusterIt = streamPortNode.audioClusters.find(streamPortNode.staticModel.baseCluster + mapping.clusterOffset); clusterIt != streamPortNode.audioClusters.end())
-		{
-			if (mapping.clusterChannel >= clusterIt->second.staticModel.channelCount)
-			{
-				// Flag the entity as "Misbehaving"
-				setMisbehavingCompatibilityFlag(this, controlledEntity, "IEEE1722.1-2021 - 7.4.44.2.1/7.2.16", "Invalid Mapping received: ClusterChannel is greater than channels in the AudioCluster");
-				continue;
-			}
 		}
 
 		fixedMappings.push_back(mapping);
@@ -5003,6 +5016,121 @@ void ControllerImpl::validateRedundancy(ControlledEntityImpl& controlledEntity) 
 #endif // ENABLE_AVDECC_FEATURE_REDUNDANCY
 }
 
+void ControllerImpl::validateAudioMappings(ControlledEntityImpl& controlledEntity) noexcept
+{
+	// Only for entities with a model
+	if (!controlledEntity.getEntity().getEntityCapabilities().test(entity::EntityCapability::AemSupported) || !controlledEntity.hasAnyConfiguration())
+	{
+		return;
+	}
+
+	// Returns the first mapping (static or dynamic) of the StreamPort violating a requirement, along with the violation
+	auto const findViolation = [](model::StreamPortNode const& streamPortNode, auto const& checkMapping) -> std::optional<std::pair<entity::model::AudioMapping, MappingViolation>>
+	{
+		for (auto const& [audioMapIndex, audioMapNode] : streamPortNode.audioMaps)
+		{
+			for (auto const& mapping : audioMapNode.staticModel.mappings)
+			{
+				if (auto violation = checkMapping(mapping))
+				{
+					return std::make_pair(mapping, std::move(*violation));
+				}
+			}
+		}
+		for (auto const& mapping : streamPortNode.dynamicModel.dynamicAudioMap)
+		{
+			if (auto violation = checkMapping(mapping))
+			{
+				return std::make_pair(mapping, std::move(*violation));
+			}
+		}
+		return std::nullopt;
+	};
+	// Returns the message describing the violation, including the faulty mapping
+	auto const buildMessage = [](model::StreamPortNode const& streamPortNode, entity::model::AudioMapping const& mapping, MappingViolation const& violation)
+	{
+		return violation.message + " (" + entity::model::descriptorTypeToString(streamPortNode.descriptorType) + "." + std::to_string(streamPortNode.descriptorIndex) + " mapping " + std::to_string(mapping.streamIndex) + "." + std::to_string(mapping.streamChannel) + " > " + std::to_string(mapping.clusterOffset) + "." + std::to_string(mapping.clusterChannel) + ")";
+	};
+
+	try
+	{
+		auto const& configurationNode = controlledEntity.getCurrentConfigurationNode();
+
+		// [IEEE1722.1] A mapping can only reference a Stream, an Audio Cluster and an Audio Cluster channel that exist in the entity model
+		auto const checkReferences = [&controlledEntity, &findViolation, &buildMessage](auto const& streamPortNodes, std::uint16_t const maxStreams)
+		{
+			for (auto const& [streamPortIndex, streamPortNode] : streamPortNodes)
+			{
+				auto const result = findViolation(streamPortNode,
+					[maxStreams, &streamPortNode = streamPortNode](entity::model::AudioMapping const& mapping)
+					{
+						return checkMappingReferences(maxStreams, streamPortNode, mapping);
+					});
+				if (result)
+				{
+					// Flag the entity as "Misbehaving", the same way an invalid mapping received in a notification does
+					setMisbehavingCompatibilityFlag(nullptr, controlledEntity, result->second.specClause, buildMessage(streamPortNode, result->first, result->second));
+					return true;
+				}
+			}
+			return false;
+		};
+		for (auto const& [audioUnitIndex, audioUnitNode] : configurationNode.audioUnits)
+		{
+			if (checkReferences(audioUnitNode.streamPortInputs, static_cast<std::uint16_t>(configurationNode.streamInputs.size())) || checkReferences(audioUnitNode.streamPortOutputs, static_cast<std::uint16_t>(configurationNode.streamOutputs.size())))
+			{
+				// A misbehaving entity is neither IEEE1722.1 nor Milan compatible, no need to check further
+				return;
+			}
+		}
+
+		// [Milan] A mapping cannot reference a channel that does not exist in the current format of the Stream (dangling mapping)
+		// Only checked up to Milan 1.3, as a later version of the specification might allow dangling mappings
+		if (controlledEntity.getCompatibilityFlags().test(ControlledEntity::CompatibilityFlag::Milan) && controlledEntity.getMilanCompatibilityVersion() < entity::model::MilanVersion{ 1, 4 })
+		{
+			auto const checkDangling = [&controlledEntity, &findViolation, &buildMessage](auto const& streamPortNodes, auto const& streamNodes, MappingViolation const& danglingViolation)
+			{
+				for (auto const& [streamPortIndex, streamPortNode] : streamPortNodes)
+				{
+					auto const result = findViolation(streamPortNode,
+						[&streamNodes, &danglingViolation](entity::model::AudioMapping const& mapping) -> std::optional<MappingViolation>
+						{
+							if (auto const streamIt = streamNodes.find(mapping.streamIndex); streamIt != streamNodes.end())
+							{
+								auto const formatInfo = entity::model::StreamFormatInfo::create(streamIt->second.dynamicModel.streamFormat);
+								auto const formatType = formatInfo->getType();
+								// The channels of an unknown format cannot be checked
+								if (formatType != entity::model::StreamFormatInfo::Type::None && formatType != entity::model::StreamFormatInfo::Type::Unsupported && mapping.streamChannel >= formatInfo->getChannelsCount())
+								{
+									return danglingViolation;
+								}
+							}
+							return std::nullopt;
+						});
+					if (result)
+					{
+						// Remove "Milan compatibility"
+						removeCompatibilityFlag(nullptr, controlledEntity, ControlledEntity::CompatibilityFlag::Milan, result->second.specClause, buildMessage(streamPortNode, result->first, result->second));
+						return true;
+					}
+				}
+				return false;
+			};
+			for (auto const& [audioUnitIndex, audioUnitNode] : configurationNode.audioUnits)
+			{
+				if (checkDangling(audioUnitNode.streamPortInputs, configurationNode.streamInputs, MappingViolation{ "Milan 1.3 - 5.3.10.1", "Dangling mapping: the index of the mapped Stream Input's channel shall be lower than the number of channels in the current format of the Stream Input" }) || checkDangling(audioUnitNode.streamPortOutputs, configurationNode.streamOutputs, MappingViolation{ "Milan 1.3 - 5.3.9.1/5.4.2.27", "Dangling mapping: a mapping shall not reference a channel of a Stream Output that does not exist in its current format" }))
+				{
+					return;
+				}
+			}
+		}
+	}
+	catch (ControlledEntity::Exception const&)
+	{
+		// Ignore, an invalid current configuration is already reported by validateEntityModel
+	}
+}
+
 // Checks if AAF audio format is a Milan Base Format - Milan 1.3 Clause 6.2
 static bool isMilanBaseAudioFormat(entity::model::StreamFormatInfo const& formatInfo) noexcept
 {
@@ -5342,6 +5470,9 @@ void ControllerImpl::validateEntity(ControlledEntityImpl& controlledEntity) noex
 
 	// Validate entity model, if existing
 	validateEntityModel(controlledEntity);
+
+	// Validate the audio mappings only reference existing channels
+	validateAudioMappings(controlledEntity);
 
 	// Check for AvbInterfaceCounters - Link Status
 	auto const& e = controlledEntity.getEntity();

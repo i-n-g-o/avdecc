@@ -621,6 +621,123 @@ TEST_F(Controller_F, VirtualEntityLoadUTF8)
 	//ASSERT_NE(std::future_status::timeout, status);
 }
 
+/*
+ * IEEE1722.1: a mapping must only reference a Stream, an Audio Cluster and an Audio Cluster channel that exist in the model, the entity is misbehaving otherwise.
+ * Milan 1.3 Clause 5.3.9.1/5.3.10.1: a mapping must not reference a stream channel that does not exist in the current format (dangling mapping).
+ * Up to Milan 1.3 an entity with a dangling mapping is no longer Milan compatible, a later version of the specification might allow it.
+ */
+TEST(Controller, InvalidAudioMappings)
+{
+	using CompatibilityFlag = la::avdecc::controller::ControlledEntity::CompatibilityFlag;
+	using CompatibilityFlags = la::avdecc::controller::ControlledEntity::CompatibilityFlags;
+	auto constexpr EntityID = la::avdecc::UniqueIdentifier{ 0x001B92FFFF000001 };
+	auto const flags = la::avdecc::entity::model::jsonSerializer::Flags{ la::avdecc::entity::model::jsonSerializer::Flag::IgnoreAEMSanityChecks, la::avdecc::entity::model::jsonSerializer::Flag::ProcessADP, la::avdecc::entity::model::jsonSerializer::Flag::ProcessCompatibility, la::avdecc::entity::model::jsonSerializer::Flag::ProcessDynamicModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessMilan, la::avdecc::entity::model::jsonSerializer::Flag::ProcessState, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStaticModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStatistics };
+	auto const filePath = std::filesystem::temp_directory_path() / "InvalidAudioMappings.json";
+	auto const Milan = CompatibilityFlags{ CompatibilityFlag::IEEE17221, CompatibilityFlag::Milan };
+	auto const IEEE = CompatibilityFlags{ CompatibilityFlag::IEEE17221 };
+	auto const Misbehaving = CompatibilityFlags{ CompatibilityFlag::Misbehaving };
+
+	struct LoadResult
+	{
+		CompatibilityFlags flags{};
+		la::avdecc::controller::ControlledEntity::CompatibilityChangedEvents events{};
+	};
+
+	// Loads the Milan Listener entity (9 Stream Inputs, the last one being CRF, and 4 single channel Audio Clusters) with a single Stream Port Input mapping, and returns its compatibility
+	auto const loadWithMapping = [&flags, &filePath, EntityID](la::avdecc::entity::model::AudioMapping const& mapping, std::optional<std::string> const& milanCompatibilityVersion = std::nullopt, bool const isMilan = true)
+	{
+		auto object = nlohmann::json{};
+		{
+			auto ifs = std::ifstream{ "data/Listener.json" };
+			object = nlohmann::json::parse(ifs);
+		}
+		auto& streamPort = object.at("entity_model").at("entity_descriptor").at("configuration_descriptors").at(0).at("audio_unit_descriptors").at(0).at("stream_port_input_descriptors").at(0);
+		streamPort.at("dynamic").at("dynamic_mappings") = nlohmann::json::array({ { { "stream_index", mapping.streamIndex }, { "stream_channel", mapping.streamChannel }, { "cluster_offset", mapping.clusterOffset }, { "cluster_channel", mapping.clusterChannel } } });
+		if (milanCompatibilityVersion)
+		{
+			object["milan_compatibility_version"] = *milanCompatibilityVersion;
+		}
+		if (!isMilan)
+		{
+			object["compatibility_flags"] = nlohmann::json::array({ "IEEE17221" });
+		}
+		{
+			auto ofs = std::ofstream{ filePath };
+			ofs << object.dump();
+		}
+
+		auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+		auto const [error, message] = controller->loadVirtualEntityFromJson(filePath.string(), flags);
+		EXPECT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, error) << message;
+		auto const entity = controller->getControlledEntityGuard(EntityID);
+		if (!entity)
+		{
+			ADD_FAILURE() << "Entity not loaded";
+			return LoadResult{};
+		}
+		EXPECT_EQ(1u, entity->getStreamPortInputAudioMappings(0u).size()) << "Mapping read during enumeration should be kept in the model";
+		return LoadResult{ entity->getCompatibilityFlags(), entity->getCompatibilityChangedEvents() };
+	};
+
+	// Valid mapping
+	EXPECT_EQ(Milan, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 0u, 0u, 0u, 0u }).flags);
+
+	// Stream, Audio Cluster or Audio Cluster channel that does not exist in the model: misbehaving entity, whatever its Milan version
+	EXPECT_EQ(Misbehaving, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 9u, 0u, 0u, 0u }).flags);
+	EXPECT_EQ(Misbehaving, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 0u, 0u, 4u, 0u }).flags);
+	EXPECT_EQ(Misbehaving, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 0u, 0u, 0u, 1u }).flags);
+	EXPECT_EQ(Misbehaving, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 9u, 0u, 0u, 0u }, "1.4.0.0").flags);
+	EXPECT_EQ(Misbehaving, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 9u, 0u, 0u, 0u }, std::nullopt, false).flags);
+
+	// Dangling mapping (Stream Input 8 is CRF, it has no audio channel): no longer Milan compatible up to Milan 1.3
+	EXPECT_EQ(IEEE, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u }).flags);
+	EXPECT_EQ(IEEE, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u }, "1.3.0.0").flags);
+	EXPECT_EQ(Milan, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u }, "1.4.0.0").flags);
+	EXPECT_EQ(IEEE, loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u }, std::nullopt, false).flags);
+
+	// The compatibility changes detected while validating the entity are recorded as events, with the violated clause
+	{
+		auto const result = loadWithMapping(la::avdecc::entity::model::AudioMapping{ 9u, 0u, 0u, 0u });
+		ASSERT_EQ(1u, result.events.size());
+		EXPECT_EQ(Milan, result.events[0].previousFlags);
+		EXPECT_EQ(Misbehaving, result.events[0].newFlags);
+		EXPECT_EQ("IEEE1722.1-2021 - 7.4.44.2.1/7.2.2", result.events[0].specClause);
+	}
+	{
+		auto const result = loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u });
+		ASSERT_EQ(1u, result.events.size());
+		EXPECT_EQ(Milan, result.events[0].previousFlags);
+		EXPECT_EQ(IEEE, result.events[0].newFlags);
+		EXPECT_EQ("Milan 1.3 - 5.3.10.1", result.events[0].specClause);
+	}
+	EXPECT_TRUE(loadWithMapping(la::avdecc::entity::model::AudioMapping{ 0u, 0u, 0u, 0u }).events.empty());
+
+	// Reloading the dump of a validated entity does not record the same compatibility change twice
+	{
+		auto const dumpPath = std::filesystem::temp_directory_path() / "InvalidAudioMappingsDump.json";
+		loadWithMapping(la::avdecc::entity::model::AudioMapping{ 8u, 0u, 0u, 0u });
+		{
+			auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+			auto const [loadError, loadMessage] = controller->loadVirtualEntityFromJson(filePath.string(), flags);
+			ASSERT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, loadError) << loadMessage;
+			auto const [dumpError, dumpMessage] = controller->serializeControlledEntityAsJson(EntityID, dumpPath.string(), flags, "unit test");
+			ASSERT_EQ(la::avdecc::jsonSerializer::SerializationError::NoError, dumpError) << dumpMessage;
+		}
+		{
+			auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+			auto const [loadError, loadMessage] = controller->loadVirtualEntityFromJson(dumpPath.string(), flags);
+			ASSERT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, loadError) << loadMessage;
+			auto const entity = controller->getControlledEntityGuard(EntityID);
+			ASSERT_TRUE(!!entity);
+			EXPECT_EQ(IEEE, entity->getCompatibilityFlags());
+			EXPECT_EQ(1u, entity->getCompatibilityChangedEvents().size());
+		}
+		std::filesystem::remove(dumpPath);
+	}
+
+	std::filesystem::remove(filePath);
+}
+
 namespace
 {
 class Builder : public la::avdecc::controller::model::DefaultedVirtualEntityBuilder

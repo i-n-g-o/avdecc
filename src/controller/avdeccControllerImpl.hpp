@@ -755,6 +755,7 @@ private:
 	static DynamicControlValuesValidationResult validateControlValues(UniqueIdentifier const entityID, entity::model::ControlIndex const controlIndex, UniqueIdentifier const& controlType, entity::model::ControlValueType::Type const controlValueType, entity::model::ControlValues const& staticValues, entity::model::ControlValues const& dynamicValues) noexcept;
 	static void validateControlDescriptors(ControlledEntityImpl& controlledEntity) noexcept;
 	static void validateRedundancy(ControlledEntityImpl& controlledEntity) noexcept;
+	static void validateAudioMappings(ControlledEntityImpl& controlledEntity) noexcept;
 	static void validateEntityModel(ControlledEntityImpl& controlledEntity) noexcept;
 	static void validateEntity(ControlledEntityImpl& controlledEntity) noexcept;
 	static std::tuple<bool, std::optional<entity::model::AudioMapping>, std::optional<entity::model::AudioMapping>> getMappingForInputClusterIdentification(model::StreamPortInputNode const& streamPortNode, model::ClusterIdentification const& clusterIdentification, std::function<bool(entity::model::StreamIndex)> const& isRedundantPrimaryStreamInput, std::function<bool(entity::model::StreamIndex)> const& isRedundantSecondaryStreamInput) noexcept; // Returns pair<primary, secondary> where primary contains redundant primary stream or non-redundant stream, secondary contains redundant secondary stream or std::nullopt
