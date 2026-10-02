@@ -266,11 +266,12 @@ void ControllerImpl::setMilanWarningCompatibilityFlag(ControllerImpl const* cons
 			newFlags.set(ControlledEntity::CompatibilityFlag::MilanWarning);
 			controlledEntity.setCompatibilityFlags(newFlags);
 
+			// Create a compatibilityChanged event (even without a controller, so the changes detected while validating the entity are also recorded)
+			controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ oldFlags, oldMilanCompatibilityVersion, newFlags, newMilanCompatibilityVersion, specClause, message });
+
 			if (controller)
 			{
 				AVDECC_ASSERT(controller->isAnyControllerEntitySelfLocked(), "Should only be called from the network thread (where ProtocolInterface is locked)");
-				// Create a compatibilityChanged event
-				controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ oldFlags, oldMilanCompatibilityVersion, newFlags, newMilanCompatibilityVersion, specClause, message });
 				// Entity was advertised to the user, notify observers
 				if (controlledEntity.wasAdvertised())
 				{
@@ -329,11 +330,12 @@ void ControllerImpl::removeCompatibilityFlag(ControllerImpl const* const control
 		controlledEntity.setCompatibilityFlags(newFlags);
 		controlledEntity.setMilanCompatibilityVersion(newMilanCompatibilityVersion);
 
+		// Create a compatibilityChanged event (even without a controller, so the changes detected while validating the entity are also recorded)
+		controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ oldFlags, oldMilanCompatibilityVersion, newFlags, newMilanCompatibilityVersion, specClause, message });
+
 		if (controller)
 		{
 			AVDECC_ASSERT(controller->isAnyControllerEntitySelfLocked(), "Should only be called from the network thread (where ProtocolInterface is locked)");
-			// Create a compatibilityChanged event
-			controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ oldFlags, oldMilanCompatibilityVersion, newFlags, newMilanCompatibilityVersion, specClause, message });
 			// Entity was advertised to the user, notify observers
 			if (controlledEntity.wasAdvertised())
 			{
@@ -366,12 +368,13 @@ void ControllerImpl::decreaseMilanCompatibilityVersion(ControllerImpl const* con
 		LOG_CONTROLLER_COMPAT(controlledEntity.getEntity().getEntityID(), "Downgrading Milan compatibility version from {} to {}", oldMilanCompatibilityVersion.to_string(), version.to_string());
 		controlledEntity.setMilanCompatibilityVersion(version);
 
+		// Create a compatibilityChanged event (even without a controller, so the changes detected while validating the entity are also recorded)
+		auto const compatibilityFlags = controlledEntity.getCompatibilityFlags();
+		controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ compatibilityFlags, oldMilanCompatibilityVersion, compatibilityFlags, version, specClause, message });
+
 		if (controller)
 		{
 			AVDECC_ASSERT(controller->isAnyControllerEntitySelfLocked(), "Should only be called from the network thread (where ProtocolInterface is locked)");
-			// Create a compatibilityChanged event
-			auto const compatibilityFlags = controlledEntity.getCompatibilityFlags();
-			controlledEntity.addCompatibilityChangedEvent(ControlledEntity::CompatibilityChangedEvent{ compatibilityFlags, oldMilanCompatibilityVersion, compatibilityFlags, version, specClause, message });
 			// Entity was advertised to the user, notify observers
 			if (controlledEntity.wasAdvertised())
 			{
