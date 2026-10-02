@@ -298,7 +298,7 @@ void ControllerImpl::removeCompatibilityFlag(ControllerImpl const* const control
 			if (newFlags.test(ControlledEntity::CompatibilityFlag::IEEE17221))
 			{
 				LOG_CONTROLLER_COMPAT(controlledEntity.getEntity().getEntityID(), "Entity not fully IEEE1722.1 compliant");
-				newFlags.reset(flag);
+				newFlags.reset(ControlledEntity::CompatibilityFlag::IEEE17221); // Be explicit (in case we add fallthrough in the future)
 			}
 			// A non compliant IEEE1722.1 device is not Milan compliant either
 			[[fallthrough]];
@@ -308,7 +308,7 @@ void ControllerImpl::removeCompatibilityFlag(ControllerImpl const* const control
 			{
 				LOG_CONTROLLER_COMPAT(controlledEntity.getEntity().getEntityID(), "Entity not fully Milan compliant");
 				newMilanCompatibilityVersion = entity::model::MilanVersion{};
-				newFlags.reset(flag);
+				newFlags.reset(ControlledEntity::CompatibilityFlag::Milan); // Be explicit because of the fallthrough
 			}
 			break;
 		case ControlledEntity::CompatibilityFlag::IEEE17221Warning:

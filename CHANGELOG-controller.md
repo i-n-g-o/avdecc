@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Fixed
 - Possible crash (segfault) in onPreAdvertiseEntity when controlledEntityConfigurationNode is nullptr and CBR feature is enabled
+- Milan compatibility flag not removed when an entity loses its IEEE1722.1 compatibility (or is flagged as Misbehaving)
 - Compatibility change events not recorded for the changes detected while validating an entity (end of the enumeration, or loading of a virtual entity), they were only logged
 
 ## [4.3.1] - 2025-12-19
