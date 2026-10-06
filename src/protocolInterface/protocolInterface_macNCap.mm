@@ -631,7 +631,7 @@ private:
 
 		if (error != nullptr)
 		{
-			auto const errorCode = nw_error_get_error_code(error);
+			[[maybe_unused]] auto const errorCode = nw_error_get_error_code(error);
 			LOG_PROTOCOL_INTERFACE_TRACE(la::networkInterface::MacAddress{}, la::networkInterface::MacAddress{}, "nw_ethernet_channel state {} with error code {}", static_cast<int>(state), errorCode);
 		}
 
