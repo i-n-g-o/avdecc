@@ -195,8 +195,9 @@ private:
 		// Get current time
 		auto const now = std::chrono::steady_clock::now();
 
-		// Check if we don't have too many inflight commands or sending too fast for this destination macAddress
-		if (inflight.inflightCommands.size() >= getMaxInflightAecpMessages(entityID) || !hasExpired(now, inflight.lastSendTime, getAecpSendInterval(entityID)))
+		// Check if we don't have too many inflight commands or sending too fast for this destination entity
+		// The send interval only applies while commands are inflight: an entity that answered all of them is ready for the next one, and waiting for the interval would delay it until the next state machine tick (15.6 msec on Windows)
+		if (inflight.inflightCommands.size() >= getMaxInflightAecpMessages(entityID) || (!inflight.inflightCommands.empty() && !hasExpired(now, inflight.lastSendTime, getAecpSendInterval(entityID))))
 		{
 			return it;
 		}
