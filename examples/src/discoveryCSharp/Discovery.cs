@@ -278,10 +278,10 @@ class DiscoveryApp
 				var entityID = entity.getEntity().getEntityID().getValue().ToString("X");
 				Console.WriteLine($"Aecp Unexpected Response Counter for {entityID}: {value}");
 			}
-			public override void onAecpResponseAverageTimeChanged(la.avdecc.controller.Controller controller, la.avdecc.controller.ControlledEntity entity, std.chrono.milliseconds value, la.avdecc.controller.InterfaceType interfaceType)
+			public override void onAecpResponseAverageTimeChanged(la.avdecc.controller.Controller controller, la.avdecc.controller.ControlledEntity entity, std.chrono.microseconds value, la.avdecc.controller.InterfaceType interfaceType)
 			{
 				var entityID = entity.getEntity().getEntityID().getValue().ToString("X");
-				Console.WriteLine($"Aecp Response Average Time for {entityID}: {value} msec");
+				Console.WriteLine($"Aecp Response Average Time for {entityID}: {value.count()} usec");
 			}
 
 			public override void onAemAecpUnsolicitedCounterChanged(la.avdecc.controller.Controller controller, la.avdecc.controller.ControlledEntity entity, ulong value, la.avdecc.controller.InterfaceType interfaceType)

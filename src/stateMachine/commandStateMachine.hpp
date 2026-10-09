@@ -57,7 +57,7 @@ public:
 		virtual void onAecpRetry(la::avdecc::UniqueIdentifier const& entityID) noexcept = 0;
 		virtual void onAecpTimeout(la::avdecc::UniqueIdentifier const& entityID) noexcept = 0;
 		virtual void onAecpUnexpectedResponse(la::avdecc::UniqueIdentifier const& entityID) noexcept = 0;
-		virtual void onAecpResponseTime(la::avdecc::UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept = 0;
+		virtual void onAecpResponseTime(la::avdecc::UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept = 0;
 	};
 
 	CommandStateMachine(Manager* manager, Delegate* const delegate) noexcept;

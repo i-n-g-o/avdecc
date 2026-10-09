@@ -369,7 +369,7 @@ public:
 		/** When the count of AECP unexpected response changed */
 		virtual void onAecpUnexpectedResponseCounterChanged(la::avdecc::controller::Controller const* const controller, la::avdecc::controller::ControlledEntity const* const entity, std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept = 0;
 		/** When the AECP average response time changed */
-		virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const controller, la::avdecc::controller::ControlledEntity const* const entity, std::chrono::milliseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept = 0;
+		virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const controller, la::avdecc::controller::ControlledEntity const* const entity, std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept = 0;
 		/** When the count of AEM-AECP unsolicited notifications changed */
 		virtual void onAemAecpUnsolicitedCounterChanged(la::avdecc::controller::Controller const* const controller, la::avdecc::controller::ControlledEntity const* const entity, std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept = 0;
 		/** When the count of lost AEM-AECP unsolicited notifications changed. The lost notifications are the ones from expectedSequenceID up to receivedSequenceID (excluded), the sequence space wrapping at 16 bits. */
@@ -470,7 +470,7 @@ public:
 		/** When the count of AECP unexpected response changed */
 		virtual void onAecpUnexpectedResponseCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override {}
 		/** When the AECP average response time changed */
-		virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::chrono::milliseconds const& /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override {}
+		virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::chrono::microseconds const& /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override {}
 		/** When the count of AEM-AECP unsolicited notifications changed */
 		virtual void onAemAecpUnsolicitedCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override {}
 		/** When the count of lost AEM-AECP unsolicited notifications changed */

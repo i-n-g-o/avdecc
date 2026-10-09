@@ -2516,7 +2516,7 @@ void CapabilityDelegate::onAecpUnexpectedResponse(protocol::ProtocolInterface* c
 	utils::invokeProtectedMethod(&controller::Delegate::onAecpUnexpectedResponse, _controllerDelegate, &_controllerInterface, entityID);
 }
 
-void CapabilityDelegate::onAecpResponseTime(protocol::ProtocolInterface* const /*pi*/, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept
+void CapabilityDelegate::onAecpResponseTime(protocol::ProtocolInterface* const /*pi*/, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept
 {
 	// Statistics
 	utils::invokeProtectedMethod(&controller::Delegate::onAecpResponseTime, _controllerDelegate, &_controllerInterface, entityID, responseTime);

@@ -226,7 +226,7 @@ private:
 	virtual void onAecpRetry(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID) noexcept override;
 	virtual void onAecpTimeout(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID) noexcept override;
 	virtual void onAecpUnexpectedResponse(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID) noexcept override;
-	virtual void onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept override;
+	virtual void onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept override;
 
 	/* ************************************************************************** */
 	/* protocol::ProtocolInterface::VendorUniqueDelegate overrides                */

@@ -148,13 +148,13 @@ VirtualEntityModelVisitor::VirtualEntityModelVisitor(ControlledEntityImpl* const
 		auto aecpRetryCounter = std::uint64_t{};
 		auto aecpTimeoutCounter = std::uint64_t{};
 		auto aecpUnexpectedResponseCounter = std::uint64_t{};
-		auto aecpResponseAverageTime = std::chrono::milliseconds{};
+		auto aecpResponseAverageTime = std::chrono::microseconds{};
 		auto aemAecpUnsolicitedCounter = std::uint64_t{};
 		auto aemAecpUnsolicitedLossCounter = std::uint64_t{};
 		auto enumerationTime = std::chrono::milliseconds{};
 
 		// Call the builder
-		utils::invokeProtectedMethod<void (model::VirtualEntityBuilder::*)(std::uint64_t&, std::uint64_t&, std::uint64_t&, std::chrono::milliseconds&, std::uint64_t&, std::uint64_t&, std::chrono::milliseconds&)>(&model::VirtualEntityBuilder::build, _builder, aecpRetryCounter, aecpTimeoutCounter, aecpUnexpectedResponseCounter, aecpResponseAverageTime, aemAecpUnsolicitedCounter, aemAecpUnsolicitedLossCounter, enumerationTime);
+		utils::invokeProtectedMethod<void (model::VirtualEntityBuilder::*)(std::uint64_t&, std::uint64_t&, std::uint64_t&, std::chrono::microseconds&, std::uint64_t&, std::uint64_t&, std::chrono::milliseconds&)>(&model::VirtualEntityBuilder::build, _builder, aecpRetryCounter, aecpTimeoutCounter, aecpUnexpectedResponseCounter, aecpResponseAverageTime, aemAecpUnsolicitedCounter, aemAecpUnsolicitedLossCounter, enumerationTime);
 
 		// Set the statistics (a virtual entity is built for the Primary interface)
 		_controlledEntity->setAecpRetryCounter(aecpRetryCounter, InterfaceType::Primary);

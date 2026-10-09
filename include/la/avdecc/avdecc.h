@@ -581,7 +581,7 @@ typedef struct avdecc_local_entity_controller_delegate_s
 	/** Notification for when an AECP Response is received but is not expected (might have already timed out). */
 	void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* onAecpUnexpectedResponse)(LA_AVDECC_LOCAL_ENTITY_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/);
 	/** Notification for when an AECP Response is received (not an Unsolicited one) along with the time elapsed between the send and the receive. */
-	void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* onAecpResponseTime)(LA_AVDECC_LOCAL_ENTITY_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/, unsigned long long /*responseTimeMsec*/);
+	void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* onAecpResponseTime)(LA_AVDECC_LOCAL_ENTITY_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/, unsigned long long /*responseTimeUsec*/);
 	/** Notification for when an AEM-AECP Unsolicited Response was received. */
 	void(LA_AVDECC_BINDINGS_C_CALL_CONVENTION* onAemAecpUnsolicitedReceived)(LA_AVDECC_LOCAL_ENTITY_HANDLE const /*handle*/, avdecc_unique_identifier_t const /*entityID*/, avdecc_protocol_aecp_sequence_id_t const /*sequenceID*/);
 } avdecc_local_entity_controller_delegate_t, *avdecc_local_entity_controller_delegate_p;

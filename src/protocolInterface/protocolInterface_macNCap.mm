@@ -554,7 +554,7 @@ private:
 	{
 		notifyObserversMethod<ProtocolInterface::Observer>(&ProtocolInterface::Observer::onAecpUnexpectedResponse, this, entityID);
 	}
-	virtual void onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept override
+	virtual void onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept override
 	{
 		notifyObserversMethod<ProtocolInterface::Observer>(&ProtocolInterface::Observer::onAecpResponseTime, this, entityID, responseTime);
 	}

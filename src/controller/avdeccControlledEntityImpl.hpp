@@ -281,7 +281,7 @@ public:
 	virtual std::uint64_t getAecpRetryCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
 	virtual std::uint64_t getAecpTimeoutCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
 	virtual std::uint64_t getAecpUnexpectedResponseCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
-	virtual std::chrono::milliseconds const& getAecpResponseAverageTime(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
+	virtual std::chrono::microseconds const& getAecpResponseAverageTime(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
 	virtual std::uint64_t getAemAecpUnsolicitedCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
 	virtual std::uint64_t getAemAecpUnsolicitedLossCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
 	virtual std::uint64_t getMvuAecpUnsolicitedCounter(la::avdecc::controller::InterfaceType const interfaceType) const noexcept override;
@@ -351,7 +351,7 @@ public:
 	void setAecpRetryCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	void setAecpTimeoutCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	void setAecpUnexpectedResponseCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
-	void setAecpResponseAverageTime(std::chrono::milliseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
+	void setAecpResponseAverageTime(std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	void setAemAecpUnsolicitedCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	void setAemAecpUnsolicitedLossCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	void setMvuAecpUnsolicitedCounter(std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
@@ -390,7 +390,7 @@ public:
 	std::uint64_t incrementAecpRetryCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	std::uint64_t incrementAecpTimeoutCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	std::uint64_t incrementAecpUnexpectedResponseCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
-	std::chrono::milliseconds const& updateAecpResponseTimeAverage(std::chrono::milliseconds const& responseTime, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
+	std::chrono::microseconds const& updateAecpResponseTimeAverage(std::chrono::microseconds const& responseTime, la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	std::uint64_t incrementAemAecpUnsolicitedCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	std::uint64_t incrementAemAecpUnsolicitedLossCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
 	std::uint64_t incrementMvuAecpUnsolicitedCounter(la::avdecc::controller::InterfaceType const interfaceType) noexcept;
@@ -405,8 +405,8 @@ public:
 		std::uint64_t aecpTimeoutCounter{ 0ull };
 		std::uint64_t aecpUnexpectedResponseCounter{ 0ull };
 		std::uint64_t aecpResponsesCount{ 0ull }; // Intermediate variable used by aecpResponseAverageTime
-		std::chrono::milliseconds aecpResponseTimeSum{}; // Intermediate variable used by aecpResponseAverageTime
-		std::chrono::milliseconds aecpResponseAverageTime{};
+		std::chrono::microseconds aecpResponseTimeSum{}; // Intermediate variable used by aecpResponseAverageTime
+		std::chrono::microseconds aecpResponseAverageTime{};
 		std::uint64_t aemAecpUnsolicitedCounter{ 0ull };
 		std::uint64_t aemAecpUnsolicitedLossCounter{ 0ull };
 		std::uint64_t mvuAecpUnsolicitedCounter{ 0ull };

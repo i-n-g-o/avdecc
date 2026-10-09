@@ -1358,7 +1358,7 @@ void AggregateEntityImpl::onAecpUnexpectedResponse(protocol::ProtocolInterface* 
 	// Listener and Talker don't implement retry mechanism
 }
 
-void AggregateEntityImpl::onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept
+void AggregateEntityImpl::onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept
 {
 	if (_controllerCapabilityDelegate != nullptr)
 	{

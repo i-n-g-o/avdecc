@@ -1807,17 +1807,18 @@ TEST(ControlledEntity, PerInterfaceStatistics)
 	EXPECT_EQ(1u, entity.incrementMvuAecpUnsolicitedLossCounter(PrimaryIdx));
 	EXPECT_EQ(0u, entity.getMvuAecpUnsolicitedLossCounter(SecondaryIdx));
 
-	// Each interface computes its own response-time average
-	EXPECT_EQ(std::chrono::milliseconds{ 10 }, entity.updateAecpResponseTimeAverage(std::chrono::milliseconds{ 10 }, PrimaryIdx));
-	EXPECT_EQ(std::chrono::milliseconds{ 15 }, entity.updateAecpResponseTimeAverage(std::chrono::milliseconds{ 20 }, PrimaryIdx));
-	EXPECT_EQ(std::chrono::milliseconds{ 100 }, entity.updateAecpResponseTimeAverage(std::chrono::milliseconds{ 100 }, SecondaryIdx));
-	EXPECT_EQ(std::chrono::milliseconds{ 15 }, entity.getAecpResponseAverageTime(PrimaryIdx));
-	EXPECT_EQ(std::chrono::milliseconds{ 100 }, entity.getAecpResponseAverageTime(SecondaryIdx));
+	// Each interface computes its own response-time average, with a microsecond resolution (sub-millisecond response times are not rounded down to 0)
+	EXPECT_EQ(std::chrono::microseconds{ 350 }, entity.updateAecpResponseTimeAverage(std::chrono::microseconds{ 350 }, PrimaryIdx));
+	EXPECT_EQ(std::chrono::microseconds{ 400 }, entity.updateAecpResponseTimeAverage(std::chrono::microseconds{ 450 }, PrimaryIdx));
+	EXPECT_EQ(std::chrono::microseconds{ 100'000 }, entity.updateAecpResponseTimeAverage(std::chrono::microseconds{ 100'000 }, SecondaryIdx));
+	EXPECT_EQ(std::chrono::microseconds{ 400 }, entity.getAecpResponseAverageTime(PrimaryIdx));
+	EXPECT_EQ(std::chrono::microseconds{ 100'000 }, entity.getAecpResponseAverageTime(SecondaryIdx));
 }
 
 /*
  * Statistics dump/load: entity dumps are written using the per-interface statistics format; files using the
  * flat statistics format are still loadable, their counters applying to the Primary interface.
+ * The AECP response average time is stored in milliseconds, with a fractional part for the sub-millisecond resolution.
  */
 TEST(Controller, StatisticsJsonFormats)
 {
@@ -1837,8 +1838,12 @@ TEST(Controller, StatisticsJsonFormats)
 		{
 			auto const entity = controller->getControlledEntityGuard(EntityID);
 			ASSERT_TRUE(!!entity);
-			EXPECT_EQ(std::chrono::milliseconds{ 15 }, entity->getAecpResponseAverageTime(PrimaryIdx));
-			EXPECT_EQ(std::chrono::milliseconds{ 0 }, entity->getAecpResponseAverageTime(SecondaryIdx));
+			// The response average time is stored in whole milliseconds in this file
+			EXPECT_EQ(std::chrono::microseconds{ 15'000 }, entity->getAecpResponseAverageTime(PrimaryIdx));
+			EXPECT_EQ(std::chrono::microseconds{ 0 }, entity->getAecpResponseAverageTime(SecondaryIdx));
+			// Use a sub-millisecond average on the Primary interface, to check it is preserved by the dump
+			auto& entityImpl = const_cast<la::avdecc::controller::ControlledEntityImpl&>(static_cast<la::avdecc::controller::ControlledEntityImpl const&>(*entity));
+			entityImpl.setAecpResponseAverageTime(std::chrono::microseconds{ 1'234 }, PrimaryIdx);
 		}
 		// Dump the entity: the file must use the per-interface statistics format
 		{
@@ -1855,8 +1860,9 @@ TEST(Controller, StatisticsJsonFormats)
 		ASSERT_TRUE(statistics.find("primary") != statistics.end());
 		ASSERT_TRUE(statistics.find("secondary") != statistics.end());
 		EXPECT_TRUE(statistics.find("aecp_retry_counter") == statistics.end()) << "Counters must be nested in the per-interface objects";
-		EXPECT_EQ(15, statistics.at("primary").at("aecp_response_average_time").get<int>());
-		EXPECT_EQ(0, statistics.at("secondary").at("aecp_response_average_time").get<int>());
+		// Stored in milliseconds, with a fractional part for the sub-millisecond resolution
+		EXPECT_DOUBLE_EQ(1.234, statistics.at("primary").at("aecp_response_average_time").get<double>());
+		EXPECT_DOUBLE_EQ(0.0, statistics.at("secondary").at("aecp_response_average_time").get<double>());
 		EXPECT_TRUE(statistics.find("enumeration_time") != statistics.end());
 	}
 
@@ -1869,8 +1875,8 @@ TEST(Controller, StatisticsJsonFormats)
 		}
 		auto const entity = controller->getControlledEntityGuard(EntityID);
 		ASSERT_TRUE(!!entity);
-		EXPECT_EQ(std::chrono::milliseconds{ 15 }, entity->getAecpResponseAverageTime(PrimaryIdx));
-		EXPECT_EQ(std::chrono::milliseconds{ 0 }, entity->getAecpResponseAverageTime(SecondaryIdx));
+		EXPECT_EQ(std::chrono::microseconds{ 1'234 }, entity->getAecpResponseAverageTime(PrimaryIdx));
+		EXPECT_EQ(std::chrono::microseconds{ 0 }, entity->getAecpResponseAverageTime(SecondaryIdx));
 	}
 
 	std::filesystem::remove(dumpPath);
@@ -2357,6 +2363,77 @@ TEST(Controller, NotificationOriginTellsTheMessageAndTheInterface)
 		auto const origin = controller->getCurrentNotificationOrigin();
 		EXPECT_EQ(Source::Unknown, origin.source);
 		EXPECT_FALSE(origin.sequenceID.has_value());
+	}
+}
+
+namespace
+{
+/** Records the AECP response average times notified to the observers. */
+class AecpResponseAverageTimeObserver final : public la::avdecc::controller::Controller::DefaultedObserver
+{
+public:
+	std::vector<std::chrono::microseconds> getValues() const noexcept
+	{
+		auto const lg = std::lock_guard{ _lock };
+		return _values;
+	}
+
+private:
+	virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override
+	{
+		auto const lg = std::lock_guard{ _lock };
+		_values.push_back(value);
+	}
+
+	mutable std::mutex _lock{};
+	std::vector<std::chrono::microseconds> _values{};
+	DECLARE_AVDECC_OBSERVER_GUARD(AecpResponseAverageTimeObserver);
+};
+} // namespace
+
+/*
+ * Observers are notified when the AECP response average time of an advertised entity changes, with a microsecond resolution.
+ * The notification used to never be sent (the previous value was read through a reference updated along with the average), and responses received in less than a millisecond were averaged as 0.
+ */
+TEST(Controller, AecpResponseAverageTimeChangedNotification)
+{
+	static auto constexpr BusName = "AecpResponseTime_Bus";
+	static auto constexpr CommandsCount = 5u;
+	constexpr auto EntityID = la::avdecc::UniqueIdentifier{ 0x00CAFEBABE0000B1 };
+
+	auto const executors = registerDualPiExecutors("AecpResponseTime_Ex");
+	auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, BusName, 0x0013, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::optional<std::string>{ executors.primaryExecutorName }, nullptr);
+	auto observer = AecpResponseAverageTimeObserver{};
+	controller->registerObserver(&observer);
+
+	// The entity answers NotImplemented to the enumeration commands, so it is quickly advertised
+	auto entity = UnsolTestEntity{ BusName, { { 0xB1, 0x06, 0x05, 0x04, 0x03, 0x02 } }, executors.primaryExecutorName, EntityID, la::avdecc::entity::model::AvbInterfaceIndex{ 0u } };
+	entity.sendAdpAvailable();
+	ASSERT_TRUE(waitFor(
+		[&]
+		{
+			return !!controller->getControlledEntityGuard(EntityID);
+		},
+		std::chrono::seconds(5)))
+		<< "Entity not advertised";
+
+	// Each response received once the entity is advertised updates the average (whatever the status of the response), and the observers are notified of the changes
+	for (auto i = 0u; i < CommandsCount; ++i)
+	{
+		controller->setEntityName(EntityID, la::avdecc::entity::model::AvdeccFixedString{ "Name" }, nullptr);
+	}
+	ASSERT_TRUE(waitFor(
+		[&]
+		{
+			return !observer.getValues().empty();
+		},
+		std::chrono::seconds(5)))
+		<< "AECP response average time change not notified";
+
+	// The virtual network answers in less than a millisecond, which a millisecond resolution would average as 0
+	for (auto const& value : observer.getValues())
+	{
+		EXPECT_LT(0, value.count());
 	}
 }
 
