@@ -136,7 +136,17 @@ namespace avdecc
 {
 namespace protocol
 {
-using open_live_t = pcap_t* (*)(const char*, int, int, int, char*);
+using create_t = pcap_t* (*)(const char*, char*);
+using set_snaplen_t = int (*)(pcap_t*, int);
+using set_promisc_t = int (*)(pcap_t*, int);
+using set_timeout_t = int (*)(pcap_t*, int);
+#ifdef _WIN32
+using setmintocopy_t = int (*)(pcap_t*, int);
+#else // !_WIN32
+using set_immediate_mode_t = int (*)(pcap_t*, int);
+#endif // _WIN32
+using activate_t = int (*)(pcap_t*);
+using geterr_t = char* (*)(pcap_t*);
 using fileno_t = int (*)(pcap_t*);
 using close_t = void (*)(pcap_t*);
 using compile_t = int (*)(pcap_t*, bpf_program*, const char*, int, bpf_u_int32);
@@ -150,7 +160,17 @@ using sendpacket_t = int (*)(pcap_t*, const u_char*, int);
 struct PcapInterface::pImpl
 {
 	DL_HANDLE libraryHandle{ nullptr };
-	open_live_t open_live_ptr{ nullptr };
+	create_t create_ptr{ nullptr };
+	set_snaplen_t set_snaplen_ptr{ nullptr };
+	set_promisc_t set_promisc_ptr{ nullptr };
+	set_timeout_t set_timeout_ptr{ nullptr };
+#ifdef _WIN32
+	setmintocopy_t setmintocopy_ptr{ nullptr };
+#else // !_WIN32
+	set_immediate_mode_t set_immediate_mode_ptr{ nullptr };
+#endif // _WIN32
+	activate_t activate_ptr{ nullptr };
+	geterr_t geterr_ptr{ nullptr };
 	fileno_t fileno_ptr{ nullptr };
 	close_t close_ptr{ nullptr };
 	compile_t compile_ptr{ nullptr };
@@ -174,7 +194,19 @@ PcapInterface::PcapInterface()
 		{
 			version = lib_version_ptr();
 
-			_pImpl->open_live_ptr = reinterpret_cast<open_live_t>(DL_SYM(handle, "pcap_open_live"));
+			_pImpl->create_ptr = reinterpret_cast<create_t>(DL_SYM(handle, "pcap_create"));
+			_pImpl->set_snaplen_ptr = reinterpret_cast<set_snaplen_t>(DL_SYM(handle, "pcap_set_snaplen"));
+			_pImpl->set_promisc_ptr = reinterpret_cast<set_promisc_t>(DL_SYM(handle, "pcap_set_promisc"));
+			_pImpl->set_timeout_ptr = reinterpret_cast<set_timeout_t>(DL_SYM(handle, "pcap_set_timeout"));
+#ifdef _WIN32
+			_pImpl->setmintocopy_ptr = reinterpret_cast<setmintocopy_t>(DL_SYM(handle, "pcap_setmintocopy"));
+			auto const foundImmediateModeFunction = _pImpl->setmintocopy_ptr != nullptr;
+#else // !_WIN32
+			_pImpl->set_immediate_mode_ptr = reinterpret_cast<set_immediate_mode_t>(DL_SYM(handle, "pcap_set_immediate_mode"));
+			auto const foundImmediateModeFunction = _pImpl->set_immediate_mode_ptr != nullptr;
+#endif // _WIN32
+			_pImpl->activate_ptr = reinterpret_cast<activate_t>(DL_SYM(handle, "pcap_activate"));
+			_pImpl->geterr_ptr = reinterpret_cast<geterr_t>(DL_SYM(handle, "pcap_geterr"));
 			_pImpl->fileno_ptr = reinterpret_cast<fileno_t>(DL_SYM(handle, "pcap_fileno"));
 			_pImpl->close_ptr = reinterpret_cast<close_t>(DL_SYM(handle, "pcap_close"));
 			_pImpl->compile_ptr = reinterpret_cast<compile_t>(DL_SYM(handle, "pcap_compile"));
@@ -185,7 +217,7 @@ PcapInterface::PcapInterface()
 			_pImpl->breakloop_ptr = reinterpret_cast<breakloop_t>(DL_SYM(handle, "pcap_breakloop"));
 			_pImpl->sendpacket_ptr = reinterpret_cast<sendpacket_t>(DL_SYM(handle, "pcap_sendpacket"));
 
-			foundAllFunctions = _pImpl->open_live_ptr && _pImpl->fileno_ptr && _pImpl->close_ptr && _pImpl->compile_ptr && _pImpl->setfilter_ptr && _pImpl->freecode_ptr && _pImpl->next_ex_ptr && _pImpl->loop_ptr && _pImpl->breakloop_ptr && _pImpl->sendpacket_ptr;
+			foundAllFunctions = _pImpl->create_ptr && _pImpl->set_snaplen_ptr && _pImpl->set_promisc_ptr && _pImpl->set_timeout_ptr && foundImmediateModeFunction && _pImpl->activate_ptr && _pImpl->geterr_ptr && _pImpl->fileno_ptr && _pImpl->close_ptr && _pImpl->compile_ptr && _pImpl->setfilter_ptr && _pImpl->freecode_ptr && _pImpl->next_ex_ptr && _pImpl->loop_ptr && _pImpl->breakloop_ptr && _pImpl->sendpacket_ptr;
 		}
 
 		if (foundAllFunctions)
@@ -223,10 +255,54 @@ bool PcapInterface::is_available() const
 	return (_pImpl->libraryHandle != nullptr);
 }
 
-pcap_t* PcapInterface::open_live(const char* device, int snaplen, int promisc, int to_ms, char* ebuf) const
+pcap_t* PcapInterface::create(const char* source, char* errbuf) const
 {
-	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->open_live_ptr != nullptr));
-	return _pImpl->open_live_ptr(device, snaplen, promisc, to_ms, ebuf);
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->create_ptr != nullptr));
+	return _pImpl->create_ptr(source, errbuf);
+}
+
+int PcapInterface::set_snaplen(pcap_t* p, int snaplen) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->set_snaplen_ptr != nullptr));
+	return _pImpl->set_snaplen_ptr(p, snaplen);
+}
+
+int PcapInterface::set_promisc(pcap_t* p, int promisc) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->set_promisc_ptr != nullptr));
+	return _pImpl->set_promisc_ptr(p, promisc);
+}
+
+int PcapInterface::set_timeout(pcap_t* p, int to_ms) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->set_timeout_ptr != nullptr));
+	return _pImpl->set_timeout_ptr(p, to_ms);
+}
+
+#ifdef _WIN32
+int PcapInterface::setmintocopy(pcap_t* p, int size) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->setmintocopy_ptr != nullptr));
+	return _pImpl->setmintocopy_ptr(p, size);
+}
+#else // !_WIN32
+int PcapInterface::set_immediate_mode(pcap_t* p, int immediate) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->set_immediate_mode_ptr != nullptr));
+	return _pImpl->set_immediate_mode_ptr(p, immediate);
+}
+#endif // _WIN32
+
+int PcapInterface::activate(pcap_t* p) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->activate_ptr != nullptr));
+	return _pImpl->activate_ptr(p);
+}
+
+char* PcapInterface::geterr(pcap_t* p) const
+{
+	assert((_pImpl != nullptr) && (_pImpl->libraryHandle != nullptr) && (_pImpl->geterr_ptr != nullptr));
+	return _pImpl->geterr_ptr(p);
 }
 
 int PcapInterface::fileno(pcap_t* p) const

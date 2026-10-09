@@ -37,9 +37,46 @@ bool PcapInterface::is_available() const
 	return true;
 }
 
-pcap_t* PcapInterface::open_live(const char* device, int snaplen, int promisc, int to_ms, char* ebuf) const
+pcap_t* PcapInterface::create(const char* source, char* errbuf) const
 {
-	return pcap_open_live(device, snaplen, promisc, to_ms, ebuf);
+	return pcap_create(source, errbuf);
+}
+
+int PcapInterface::set_snaplen(pcap_t* p, int snaplen) const
+{
+	return pcap_set_snaplen(p, snaplen);
+}
+
+int PcapInterface::set_promisc(pcap_t* p, int promisc) const
+{
+	return pcap_set_promisc(p, promisc);
+}
+
+int PcapInterface::set_timeout(pcap_t* p, int to_ms) const
+{
+	return pcap_set_timeout(p, to_ms);
+}
+
+#ifdef _WIN32
+int PcapInterface::setmintocopy(pcap_t* p, int size) const
+{
+	return pcap_setmintocopy(p, size);
+}
+#else // !_WIN32
+int PcapInterface::set_immediate_mode(pcap_t* p, int immediate) const
+{
+	return pcap_set_immediate_mode(p, immediate);
+}
+#endif // _WIN32
+
+int PcapInterface::activate(pcap_t* p) const
+{
+	return pcap_activate(p);
+}
+
+char* PcapInterface::geterr(pcap_t* p) const
+{
+	return pcap_geterr(p);
 }
 
 int PcapInterface::fileno(pcap_t* p) const

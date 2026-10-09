@@ -46,6 +46,9 @@
 #include <chrono>
 #include <cstdlib>
 #include <ctime>
+#include <cstdint>
+#include <tuple>
+#include <utility>
 #ifdef __linux__
 #	include <csignal>
 #endif // __linux__
@@ -66,35 +69,30 @@ public:
 	ProtocolInterfacePcapImpl(std::string const& networkInterfaceID, std::string const& executorName)
 		: ProtocolInterfacePcap(networkInterfaceID, executorName)
 	{
-		static constexpr int PCAP_BufferSize = 65536;
-		static constexpr int PCAP_PromiscMode = 1;
-		static constexpr int PCAP_TimeoutMsec = 5;
-
 		// Should always be supported. Cannot create a PCap ProtocolInterface if it's not supported.
 		AVDECC_ASSERT(isSupported(), "Should always be supported. Cannot create a PCap ProtocolInterface if it's not supported");
 
 		// Open pcap on specified network interface
-		std::array<char, PCAP_ERRBUF_SIZE> errbuf;
 #ifdef _WIN32
 		// NPF device name
 		auto const pcapInterfaceName = std::string("\\Device\\NPF_") + networkInterfaceID;
 #else // !_WIN32
 		auto const pcapInterfaceName = networkInterfaceID;
 #endif // _WIN32
-		auto pcap = _pcapLibrary.open_live((pcapInterfaceName).c_str(), PCAP_BufferSize, PCAP_PromiscMode, PCAP_TimeoutMsec, errbuf.data());
+		auto [pcap, error] = openPcap(pcapInterfaceName);
 		// Failed to open interface (might be disabled)
 		if (pcap == nullptr)
 		{
 #ifdef _WIN32
 			// Try without NPF prefix
-			pcap = _pcapLibrary.open_live((networkInterfaceID).c_str(), PCAP_BufferSize, PCAP_PromiscMode, PCAP_TimeoutMsec, errbuf.data());
+			std::tie(pcap, error) = openPcap(networkInterfaceID);
 			// Let's assume it's Win10pcap
 			if (pcap != nullptr)
 			{
 				throw Exception(Error::TransportError, "Win10Pcap is not supported. Please uninstall it and either use WinPcap or nPcap which are both compatible.");
 			}
 #endif // _WIN32
-			throw Exception(Error::TransportError, errbuf.data());
+			throw Exception(Error::TransportError, error.c_str());
 		}
 
 		// Configure pcap filtering to ignore packets of other protocols
@@ -635,6 +633,49 @@ private:
 	/* ************************************************************ */
 	/* Private methods                                              */
 	/* ************************************************************ */
+	/**
+	* @brief Opens a pcap capture on the specified device, in immediate mode.
+	* @details Immediate mode delivers each frame as soon as it is captured. Without it, frames are held in the kernel until its buffer is full enough or the read timeout expires (which Windows rounds up to its 15.6 msec timer tick), delaying every received message.
+	* @param[in] deviceName The pcap name of the device to open.
+	* @return The pcap handle (nullptr on failure) and the error message (on failure).
+	*/
+	std::pair<pcap_t*, std::string> openPcap(std::string const& deviceName) const noexcept
+	{
+		static constexpr int PCAP_BufferSize = 65536;
+		static constexpr int PCAP_PromiscMode = 1;
+		static constexpr int PCAP_TimeoutMsec = 5;
+
+		auto errbuf = std::array<char, PCAP_ERRBUF_SIZE>{};
+		auto* const pcap = _pcapLibrary.create(deviceName.c_str(), errbuf.data());
+		if (pcap == nullptr)
+		{
+			return { nullptr, errbuf.data() };
+		}
+
+		_pcapLibrary.set_snaplen(pcap, PCAP_BufferSize);
+		_pcapLibrary.set_promisc(pcap, PCAP_PromiscMode);
+		_pcapLibrary.set_timeout(pcap, PCAP_TimeoutMsec);
+#ifndef _WIN32
+		_pcapLibrary.set_immediate_mode(pcap, 1);
+#endif // !_WIN32
+		auto status = std::int32_t{ _pcapLibrary.activate(pcap) };
+#ifdef _WIN32
+		// WinPcap does not provide pcap_set_immediate_mode, but setting the minimum amount of data to copy to 0 is what Npcap does to enable immediate mode (default is 16000 bytes)
+		if (status >= 0)
+		{
+			status = _pcapLibrary.setmintocopy(pcap, 0);
+		}
+#endif // _WIN32
+		if (status < 0)
+		{
+			auto error = std::string{ _pcapLibrary.geterr(pcap) };
+			_pcapLibrary.close(pcap);
+			return { nullptr, std::move(error) };
+		}
+
+		return { pcap, {} };
+	}
+
 	void processRawPacket(la::avdecc::MemoryBuffer&& packet) const noexcept
 	{
 		la::avdecc::ExecutorManager::getInstance().pushJob(getExecutorName(),

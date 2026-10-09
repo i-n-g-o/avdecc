@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - MacOSNative ProtocolInterface not invoking the result handler when the macOS framework refuses to send an AECP or ACMP command
 - AECP commands inflight (or queued) towards a remote entity going offline were silently discarded without invoking their result handler: they now complete with `UnknownEntity` (this also allows the dual-interface controller to re-issue the command on the other interface instead of stalling the enumeration)
 - Thread names not being set on Linux, where names longer than 15 characters are rejected (`utils::setCurrentThreadName` now returns whether the name was set, and the library falls back to shorter names)
+- pcap ProtocolInterface delaying each received message until the capture timeout expired (up to 15 msec)
 
 ## [4.3.1] - 2025-12-19
 ### Added

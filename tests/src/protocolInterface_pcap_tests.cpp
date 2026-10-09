@@ -37,6 +37,13 @@
 #include <memory>
 #include <iostream>
 #include <string>
+#include <algorithm>
+#include <condition_variable>
+#include <cstdint>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <vector>
 
 static auto constexpr DefaultExecutorName = "avdecc::protocol::PI";
 
@@ -237,4 +244,91 @@ TEST_F(INTEGRATION_ProtocolInterfacePCap_F, VuDelegate)
 		auto status = selfCommandReceivedPromise.get_future().wait_for(std::chrono::seconds(5));
 		ASSERT_NE(std::future_status::timeout, status);
 	}
+}
+
+TEST_F(INTEGRATION_ProtocolInterfacePCap_F, ReceiveLatency)
+{
+	// Without immediate mode, a lone frame is only delivered when the capture timeout expires (5 msec, rounded up to the 15.6 msec timer tick on Windows)
+	static auto constexpr RoundTripsCount = la::avdecc::protocol::AecpSequenceID{ 50u };
+	static auto constexpr MaxMedianLatency = std::chrono::microseconds{ 1000 };
+	static auto constexpr CommandType = std::uint16_t{ 66u };
+
+	class VuDelegate : public la::avdecc::protocol::ProtocolInterface::VendorUniqueDelegate
+	{
+	public:
+		/** Waits for our message with the specified sequenceID to bounce back, returning the time it was received (or nothing if it never was). */
+		std::optional<std::chrono::steady_clock::time_point> waitForMessage(la::avdecc::protocol::AecpSequenceID const sequenceID) noexcept
+		{
+			auto lock = std::unique_lock{ _lock };
+			if (!_condition.wait_for(lock, std::chrono::seconds{ 1 },
+						[this, sequenceID]()
+						{
+							return _receivedSequenceID == sequenceID;
+						}))
+			{
+				return std::nullopt;
+			}
+			return _receivedTime;
+		}
+
+	private:
+		// la::avdecc::protocol::ProtocolInterface::VendorUniqueDelegate overrides
+		virtual la::avdecc::protocol::Aecpdu::UniquePointer createAecpdu(la::avdecc::protocol::VuAecpdu::ProtocolIdentifier const& /*protocolIdentifier*/, bool const isResponse) noexcept override
+		{
+			return la::avdecc::protocol::MvuAecpdu::create(isResponse);
+		}
+		virtual bool areHandledByControllerStateMachine(la::avdecc::protocol::VuAecpdu::ProtocolIdentifier const& /*protocolIdentifier*/) const noexcept override
+		{
+			return false;
+		}
+		virtual void onVuAecpCommand(la::avdecc::protocol::ProtocolInterface* const /*pi*/, la::avdecc::protocol::VuAecpdu::ProtocolIdentifier const& /*protocolIdentifier*/, la::avdecc::protocol::VuAecpdu const& aecpdu) noexcept override
+		{
+			auto const now = std::chrono::steady_clock::now();
+			auto const& vuAecp = static_cast<la::avdecc::protocol::MvuAecpdu const&>(aecpdu);
+			// Ignore MVU commands sent by other controllers on the network
+			if (vuAecp.getCommandType().getValue() != CommandType)
+			{
+				return;
+			}
+			{
+				auto const lg = std::lock_guard{ _lock };
+				_receivedSequenceID = vuAecp.getSequenceID();
+				_receivedTime = now;
+			}
+			_condition.notify_all();
+		}
+
+		std::mutex _lock{};
+		std::condition_variable _condition{};
+		std::optional<la::avdecc::protocol::AecpSequenceID> _receivedSequenceID{};
+		std::chrono::steady_clock::time_point _receivedTime{};
+	};
+
+	auto& pi = getProtocolInterface();
+	auto delegate = VuDelegate{};
+	ASSERT_TRUE(!pi.registerVendorUniqueDelegate(la::avdecc::protocol::MvuAecpdu::ProtocolID, &delegate));
+	auto const scopedDelegate = std::unique_ptr<VuDelegate, std::function<void(VuDelegate*)>>{ &delegate, [&pi](auto*)
+		{
+			pi.unregisterVendorUniqueDelegate(la::avdecc::protocol::MvuAecpdu::ProtocolID);
+		} };
+
+	// Send messages one at a time, measuring how long each one takes to bounce back
+	auto latencies = std::vector<std::chrono::steady_clock::duration>{};
+	for (auto sequenceID = la::avdecc::protocol::AecpSequenceID{ 0u }; sequenceID < RoundTripsCount; ++sequenceID)
+	{
+		auto aecpdu = la::avdecc::protocol::MvuAecpdu::create(false);
+		auto& vuAecp = static_cast<la::avdecc::protocol::MvuAecpdu&>(*aecpdu);
+		vuAecp.setCommandType(la::avdecc::protocol::MvuCommandType{ CommandType });
+		vuAecp.setSequenceID(sequenceID);
+
+		auto const sendTime = std::chrono::steady_clock::now();
+		ASSERT_TRUE(!pi.sendAecpMessage(vuAecp));
+		auto const receivedTime = delegate.waitForMessage(sequenceID);
+		ASSERT_TRUE(receivedTime.has_value()) << "Message " << sequenceID << " did not bounce back";
+		latencies.push_back(*receivedTime - sendTime);
+	}
+
+	std::sort(latencies.begin(), latencies.end());
+	auto const medianLatency = std::chrono::duration_cast<std::chrono::microseconds>(latencies[latencies.size() / 2]);
+	EXPECT_LT(medianLatency.count(), MaxMedianLatency.count()) << "Median latency: " << medianLatency.count() << " usec";
 }
