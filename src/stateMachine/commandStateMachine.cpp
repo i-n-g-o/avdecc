@@ -365,7 +365,7 @@ void CommandStateMachine::handleAecpResponse(Aecpdu const& aecpdu) noexcept
 					utils::invokeProtectedHandler(aecpQuery.resultHandler, &aecpdu, ProtocolInterface::Error::NoError);
 
 					// Statistics
-					utils::invokeProtectedMethod(&Delegate::onAecpResponseTime, _delegate, targetID, std::chrono::duration_cast<std::chrono::milliseconds>(now - aecpQuery.sendTime));
+					utils::invokeProtectedMethod(&Delegate::onAecpResponseTime, _delegate, targetID, std::chrono::duration_cast<std::chrono::microseconds>(now - aecpQuery.sendTime));
 				}
 				else
 				{

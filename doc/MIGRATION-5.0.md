@@ -67,9 +67,30 @@ void onAemAecpUnsolicitedLossCounterChanged(Controller const* controller, Contro
 
 The lost notifications are the ones from `expectedSequenceID` up to `receivedSequenceID` (excluded), the sequence space wrapping at 16 bits (same for `onMvuAecpUnsolicitedLossCounterChanged`, MVU unsolicited notifications using their own sequence space). The library also logs them (warning level, `Controller` layer).
 
+### AECP response time resolution
+
+The AECP response times are now expressed in `std::chrono::microseconds` (they were `std::chrono::milliseconds`, which averaged the sub-millisecond response times of a local network as 0):
+
+```cpp
+// 4.x
+std::chrono::milliseconds const& ControlledEntity::getAecpResponseAverageTime() const;
+void Controller::Observer::onAecpResponseAverageTimeChanged(Controller const* controller, ControlledEntity const* entity, std::chrono::milliseconds const& value);
+void entity::controller::Delegate::onAecpResponseTime(entity::controller::Interface const* controller, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime);
+void protocol::ProtocolInterface::Observer::onAecpResponseTime(protocol::ProtocolInterface* pi, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime);
+// 5.x
+std::chrono::microseconds const& ControlledEntity::getAecpResponseAverageTime(InterfaceType interfaceType = InterfaceType::Primary) const;
+void Controller::Observer::onAecpResponseAverageTimeChanged(Controller const* controller, ControlledEntity const* entity, std::chrono::microseconds const& value, InterfaceType interfaceType);
+void entity::controller::Delegate::onAecpResponseTime(entity::controller::Interface const* controller, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime);
+void protocol::ProtocolInterface::Observer::onAecpResponseTime(protocol::ProtocolInterface* pi, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime);
+```
+
+`VirtualEntityBuilder::build` receives the AECP response average time as a `std::chrono::microseconds&` as well, and the `onAecpResponseTime` callback of the C bindings now reports microseconds.
+
 ### Entity dump (JSON) format
 
 The `statistics` object of an entity dump now nests the counters in one object per interface (`primary` / `secondary`), `enumeration_time` remaining at the top level (entity dump version bumped to 3). Files using the previous flat format are still loadable: their counters apply to the Primary interface. Files are always written using the per-interface format.
+
+The AECP response average time (`aecp_response_average_time`) is still stored in milliseconds, now with a fractional part for the sub-millisecond resolution (whole milliseconds of older files are loaded unchanged).
 
 ## New API for the redundant mode
 
@@ -83,5 +104,6 @@ The `statistics` object of an entity dump now nests the counters in one object p
 ## Migration checklist
 
 1. Recompile: the compiler will point at every overridden observer callback whose signature changed; add the trailing `InterfaceType` parameter (ignore it if you do not use the redundant mode), and the `expectedSequenceID` / `receivedSequenceID` parameters of the two unsolicited loss callbacks.
-2. C# / SWIG bindings follow the same signatures: add the `Controller.InterfaceType` parameter (and the two `ushort` sequenceID parameters of the loss callbacks) to the corresponding overrides.
-3. If (and only if) you adopt the redundant mode: create the controller with 2 `InterfaceConfiguration` entries, and make your observers track per-interface states as described above.
+2. Switch the AECP response times you handle from `std::chrono::milliseconds` to `std::chrono::microseconds` (the compiler points at the overridden callbacks, but not at the values only displayed or stored, so check their units).
+3. C# / SWIG bindings follow the same signatures: add the `Controller.InterfaceType` parameter (and the two `ushort` sequenceID parameters of the loss callbacks) to the corresponding overrides.
+4. If (and only if) you adopt the redundant mode: create the controller with 2 `InterfaceConfiguration` entries, and make your observers track per-interface states as described above.

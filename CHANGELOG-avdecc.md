@@ -12,12 +12,17 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - `ControllerEntity::getCurrentDispatchContext()` and `entity::controller::DispatchContext`: from inside a `controller::Delegate` notification or a command result handler, tells whether the message being dispatched is an unsolicited notification, the response to a command of the entity (or its failure) or a sniffed ACMP response, which ControllerEntity received it and the `sequenceID` of the message (unset only when a command failed without a response)
 - C# bindings: `entity::controller::DispatchContext` and `ControllerEntity.getCurrentDispatchContext()` are bound
 
+### Changed
+- **API break**: AECP response time (`ProtocolInterface::Observer::onAecpResponseTime`, `entity::controller::Delegate::onAecpResponseTime` and the C bindings `onAecpResponseTime`) is now in microseconds (was milliseconds)
+
 ### Fixed 
 - Better debugger support for MacOs and Linux builds
 - [Crash in MacOSNative ProtocolInterface when an entity goes offline while an AECP command is inflight (semaphore disposed while in use)](https://github.com/L-Acoustics/avdecc/issues/177)
 - MacOSNative ProtocolInterface not invoking the result handler when the macOS framework refuses to send an AECP or ACMP command
 - AECP commands inflight (or queued) towards a remote entity going offline were silently discarded without invoking their result handler: they now complete with `UnknownEntity` (this also allows the dual-interface controller to re-issue the command on the other interface instead of stalling the enumeration)
 - Thread names not being set on Linux, where names longer than 15 characters are rejected (`utils::setCurrentThreadName` now returns whether the name was set, and the library falls back to shorter names)
+- pcap ProtocolInterface delaying each received message until the capture timeout expired (up to 15 msec)
+- No delay for queued AECP command when the entity answered in less than 1 msec (massive enumeration time improvement)
 
 ## [4.3.1] - 2025-12-19
 ### Added

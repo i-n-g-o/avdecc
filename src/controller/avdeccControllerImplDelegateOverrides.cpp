@@ -1182,7 +1182,7 @@ void ControllerImpl::onAecpUnexpectedResponse(entity::controller::Interface cons
 	}
 }
 
-void ControllerImpl::onAecpResponseTime(entity::controller::Interface const* const controller, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept
+void ControllerImpl::onAecpResponseTime(entity::controller::Interface const* const controller, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept
 {
 	// Identify the PI on which the event occurred
 	auto const interfaceType = (controller == _secondaryController) ? InterfaceType::Secondary : InterfaceType::Primary;
@@ -1196,7 +1196,8 @@ void ControllerImpl::onAecpResponseTime(entity::controller::Interface const* con
 
 		AVDECC_ASSERT(isAnyControllerEntitySelfLocked(), "Should only be called from the network thread (where ProtocolInterface is locked)");
 
-		auto const& previous = entity.getAecpResponseAverageTime(interfaceType);
+		// Copy the previous value, the returned reference being updated by updateAecpResponseTimeAverage
+		auto const previous = entity.getAecpResponseAverageTime(interfaceType);
 		auto const& value = entity.updateAecpResponseTimeAverage(responseTime, interfaceType);
 
 		// Entity was advertised to the user, notify observers

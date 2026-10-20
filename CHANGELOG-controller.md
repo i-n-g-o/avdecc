@@ -27,12 +27,14 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - Statistics are maintained per interface (counters and AECP response-time average): the 8 Statistics events (`onAecpRetryCounterChanged`, `onAecpTimeoutCounterChanged`, `onAecpUnexpectedResponseCounterChanged`, `onAecpResponseAverageTimeChanged`, `onAemAecpUnsolicitedCounterChanged`, `onAemAecpUnsolicitedLossCounterChanged`, `onMvuAecpUnsolicitedCounterChanged`, `onMvuAecpUnsolicitedLossCounterChanged`) gained a trailing `InterfaceType` parameter and carry that interface's counter value, and the matching `ControlledEntity` getters gained an `InterfaceType` parameter (defaulted to `Primary`)
   - `Controller::Observer::onAemAecpUnsolicitedLossCounterChanged` and `onMvuAecpUnsolicitedLossCounterChanged` also gained the `expectedSequenceID` and `receivedSequenceID` parameters (before `InterfaceType`), telling which unsolicited notifications were lost (from `expectedSequenceID` up to `receivedSequenceID`, excluded)
   - Entity dump (JSON) `statistics` object nests the counters in one object per interface (`primary` / `secondary`), entity dump version bumped to 3; files using the previous flat format are still loadable (counters applying to the Primary interface)
+- **API break**: AECP response average time (`ControlledEntity::getAecpResponseAverageTime`, `Controller::Observer::onAecpResponseAverageTimeChanged`) is now a `std::chrono::microseconds` (was `std::chrono::milliseconds`, which averaged sub-millisecond response times as 0); entity dumps still store it in milliseconds, with a fractional part
 
 ### Fixed
 - Possible crash (segfault) in onPreAdvertiseEntity when controlledEntityConfigurationNode is nullptr and CBR feature is enabled
 - Milan compatibility flag not removed when an entity loses its IEEE1722.1 compatibility (or is flagged as Misbehaving)
 - Compatibility change events not recorded for the changes detected while validating an entity (end of the enumeration, or loading of a virtual entity), they were only logged
 - Misbehaving compatibility change recorded as a simple loss of the IEEE1722.1 compatibility (the event did not include the Misbehaving flag), and notified twice to the observers
+- `Controller::Observer::onAecpResponseAverageTimeChanged` never notified
 
 ## [4.3.1] - 2025-12-19
 ### Fixed

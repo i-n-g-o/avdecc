@@ -216,7 +216,7 @@ private:
 	virtual void onAecpRetryCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
 	virtual void onAecpTimeoutCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
 	virtual void onAecpUnexpectedResponseCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
-	virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::chrono::milliseconds const& value, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
+	virtual void onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
 	virtual void onAemAecpUnsolicitedCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
 	virtual void onAemAecpUnsolicitedLossCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::protocol::AecpSequenceID const /*expectedSequenceID*/, la::avdecc::protocol::AecpSequenceID const /*receivedSequenceID*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
 	virtual void onMvuAecpUnsolicitedCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const /*entity*/, std::uint64_t const /*value*/, la::avdecc::controller::InterfaceType const /*interfaceType*/) noexcept override;
@@ -410,10 +410,10 @@ void Discovery::onAecpUnexpectedResponseCounterChanged(la::avdecc::controller::C
 	outputText("Aecp Unexpected Response Counter for " + la::avdecc::utils::toHexString(entityID, true) + ": " + std::to_string(value) + " (on " + ((interfaceType == la::avdecc::controller::InterfaceType::Primary) ? "Primary" : "Secondary") + " interface)\n");
 }
 
-void Discovery::onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const entity, std::chrono::milliseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept
+void Discovery::onAecpResponseAverageTimeChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const entity, std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept
 {
 	auto const entityID = entity->getEntity().getEntityID();
-	outputText("Aecp Response Average Time for " + la::avdecc::utils::toHexString(entityID, true) + ": " + std::to_string(value.count()) + " msec (on " + ((interfaceType == la::avdecc::controller::InterfaceType::Primary) ? "Primary" : "Secondary") + " interface)\n");
+	outputText("Aecp Response Average Time for " + la::avdecc::utils::toHexString(entityID, true) + ": " + std::to_string(value.count()) + " usec (on " + ((interfaceType == la::avdecc::controller::InterfaceType::Primary) ? "Primary" : "Secondary") + " interface)\n");
 }
 
 void Discovery::onAemAecpUnsolicitedCounterChanged(la::avdecc::controller::Controller const* const /*controller*/, la::avdecc::controller::ControlledEntity const* const entity, std::uint64_t const value, la::avdecc::controller::InterfaceType const interfaceType) noexcept

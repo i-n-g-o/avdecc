@@ -151,7 +151,8 @@ json createJsonObject(ControlledEntityImpl const& entity, entity::model::jsonSer
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AecpRetryCounter] = entity.getAecpRetryCounter(interfaceType);
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AecpTimeoutCounter] = entity.getAecpTimeoutCounter(interfaceType);
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AecpUnexpectedResponseCounter] = entity.getAecpUnexpectedResponseCounter(interfaceType);
-				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AecpResponseAverageTime] = entity.getAecpResponseAverageTime(interfaceType);
+				// Stored in milliseconds, with a fractional part for the sub-millisecond resolution (dumps written before only had whole milliseconds)
+				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AecpResponseAverageTime] = std::chrono::duration<double, std::milli>{ entity.getAecpResponseAverageTime(interfaceType) }.count();
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AemAecpUnsolicitedCounter] = entity.getAemAecpUnsolicitedCounter(interfaceType);
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_AemAecpUnsolicitedLossCounter] = entity.getAemAecpUnsolicitedLossCounter(interfaceType);
 				interfaceStatistics[controller::keyName::ControlledEntityStatistics_MvuAecpUnsolicitedCounter] = entity.getMvuAecpUnsolicitedCounter(interfaceType);
@@ -338,7 +339,8 @@ static void setEntityInterfaceStatistics(ControlledEntityImpl& entity, json cons
 		auto const it = object.find(controller::keyName::ControlledEntityStatistics_AecpResponseAverageTime);
 		if (it != object.end())
 		{
-			entity.setAecpResponseAverageTime(it->get<std::chrono::milliseconds>(), interfaceType);
+			// Stored in milliseconds, with a fractional part for the sub-millisecond resolution (dumps written before only had whole milliseconds)
+			entity.setAecpResponseAverageTime(std::chrono::round<std::chrono::microseconds>(std::chrono::duration<double, std::milli>{ it->get<double>() }), interfaceType);
 		}
 	}
 	{

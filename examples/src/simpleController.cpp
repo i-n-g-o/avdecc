@@ -121,9 +121,9 @@ int doJob()
 		{
 			outputText(std::string{ "[" } + la::avdecc::utils::toHexString(entityID, true) + "] AECP unexpected response\n");
 		}
-		virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept override
+		virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept override
 		{
-			outputText(std::string{ "[" } + la::avdecc::utils::toHexString(entityID, true) + "] AECP response time: " + std::to_string(responseTime.count()) + " msec\n");
+			outputText(std::string{ "[" } + la::avdecc::utils::toHexString(entityID, true) + "] AECP response time: " + std::to_string(responseTime.count()) + " usec\n");
 		}
 		virtual void onAemAecpUnsolicitedReceived(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& entityID, la::avdecc::protocol::AecpSequenceID const /*sequenceID*/) noexcept override
 		{

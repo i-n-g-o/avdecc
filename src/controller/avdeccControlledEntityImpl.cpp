@@ -670,7 +670,7 @@ std::uint64_t ControlledEntityImpl::getAecpUnexpectedResponseCounter(la::avdecc:
 	return getInterfaceStatistics(interfaceType).aecpUnexpectedResponseCounter;
 }
 
-std::chrono::milliseconds const& ControlledEntityImpl::getAecpResponseAverageTime(la::avdecc::controller::InterfaceType const interfaceType) const noexcept
+std::chrono::microseconds const& ControlledEntityImpl::getAecpResponseAverageTime(la::avdecc::controller::InterfaceType const interfaceType) const noexcept
 {
 	return getInterfaceStatistics(interfaceType).aecpResponseAverageTime;
 }
@@ -1647,7 +1647,7 @@ void ControlledEntityImpl::setAecpUnexpectedResponseCounter(std::uint64_t const 
 	getInterfaceStatistics(interfaceType).aecpUnexpectedResponseCounter = value;
 }
 
-void ControlledEntityImpl::setAecpResponseAverageTime(std::chrono::milliseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept
+void ControlledEntityImpl::setAecpResponseAverageTime(std::chrono::microseconds const& value, la::avdecc::controller::InterfaceType const interfaceType) noexcept
 {
 	getInterfaceStatistics(interfaceType).aecpResponseAverageTime = value;
 }
@@ -2362,7 +2362,7 @@ std::uint64_t ControlledEntityImpl::incrementAecpUnexpectedResponseCounter(la::a
 	return statistics.aecpUnexpectedResponseCounter;
 }
 
-std::chrono::milliseconds const& ControlledEntityImpl::updateAecpResponseTimeAverage(std::chrono::milliseconds const& responseTime, la::avdecc::controller::InterfaceType const interfaceType) noexcept
+std::chrono::microseconds const& ControlledEntityImpl::updateAecpResponseTimeAverage(std::chrono::microseconds const& responseTime, la::avdecc::controller::InterfaceType const interfaceType) noexcept
 {
 	auto& statistics = getInterfaceStatistics(interfaceType);
 	++statistics.aecpResponsesCount;

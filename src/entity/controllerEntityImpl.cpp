@@ -816,7 +816,7 @@ void ControllerEntityImpl::onAecpUnexpectedResponse(protocol::ProtocolInterface*
 	static_cast<controller::CapabilityDelegate&>(*_controllerCapabilityDelegate).onAecpUnexpectedResponse(pi, entityID);
 }
 
-void ControllerEntityImpl::onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept
+void ControllerEntityImpl::onAecpResponseTime(protocol::ProtocolInterface* const pi, UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept
 {
 	static_cast<controller::CapabilityDelegate&>(*_controllerCapabilityDelegate).onAecpResponseTime(pi, entityID, responseTime);
 }

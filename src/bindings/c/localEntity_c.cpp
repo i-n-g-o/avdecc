@@ -326,7 +326,7 @@ private:
 	{
 		la::avdecc::utils::invokeProtectedHandler(_delegate->onAecpUnexpectedResponse, _handle, entityID);
 	}
-	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept override
+	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept override
 	{
 		la::avdecc::utils::invokeProtectedHandler(_delegate->onAecpResponseTime, _handle, entityID, responseTime.count());
 	}

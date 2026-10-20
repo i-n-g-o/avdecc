@@ -152,7 +152,7 @@ public:
 		/** Notification for when an AECP Response is received but is not expected (might have already timed out). */
 		virtual void onAecpUnexpectedResponse(la::avdecc::protocol::ProtocolInterface* const /*pi*/, la::avdecc::UniqueIdentifier const& /*entityID*/) noexcept {}
 		/** Notification for when an AECP Response is received (not an Unsolicited one) along with the time elapsed between the send and the receive. */
-		virtual void onAecpResponseTime(la::avdecc::protocol::ProtocolInterface* const /*pi*/, la::avdecc::UniqueIdentifier const& /*entityID*/, std::chrono::milliseconds const& /*responseTime*/) noexcept {}
+		virtual void onAecpResponseTime(la::avdecc::protocol::ProtocolInterface* const /*pi*/, la::avdecc::UniqueIdentifier const& /*entityID*/, std::chrono::microseconds const& /*responseTime*/) noexcept {}
 
 		/* **** Low level notifications (not supported by all kinds of ProtocolInterface), triggered before processing the pdu **** */
 		/** Notification for when an ADPDU is received (might be a message that was sent by self as this event might be triggered for outgoing messages). */

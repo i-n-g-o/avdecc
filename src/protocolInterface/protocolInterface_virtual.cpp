@@ -364,7 +364,7 @@ private:
 	virtual void onAecpRetry(UniqueIdentifier const& entityID) noexcept override;
 	virtual void onAecpTimeout(UniqueIdentifier const& entityID) noexcept override;
 	virtual void onAecpUnexpectedResponse(UniqueIdentifier const& entityID) noexcept override;
-	virtual void onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept override;
+	virtual void onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept override;
 
 	/* ************************************************************ */
 	/* MessageDispatcher::Observer overrides                        */
@@ -831,7 +831,7 @@ void ProtocolInterfaceVirtualImpl::onAecpUnexpectedResponse(UniqueIdentifier con
 	notifyObserversMethod<ProtocolInterface::Observer>(&ProtocolInterface::Observer::onAecpUnexpectedResponse, this, entityID);
 }
 
-void ProtocolInterfaceVirtualImpl::onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept
+void ProtocolInterfaceVirtualImpl::onAecpResponseTime(UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept
 {
 	// Notify observers
 	notifyObserversMethod<ProtocolInterface::Observer>(&ProtocolInterface::Observer::onAecpResponseTime, this, entityID, responseTime);

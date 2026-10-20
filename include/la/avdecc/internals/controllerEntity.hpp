@@ -553,7 +553,7 @@ public:
 	/** Notification for when an AECP Response is received but is not expected (might have already timed out). */
 	virtual void onAecpUnexpectedResponse(la::avdecc::entity::controller::Interface const* const controller, la::avdecc::UniqueIdentifier const& entityID) noexcept = 0;
 	/** Notification for when an AECP Response is received (not an Unsolicited one) along with the time elapsed between the send and the receive. */
-	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const controller, la::avdecc::UniqueIdentifier const& entityID, std::chrono::milliseconds const& responseTime) noexcept = 0;
+	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const controller, la::avdecc::UniqueIdentifier const& entityID, std::chrono::microseconds const& responseTime) noexcept = 0;
 	/** Notification for when an AEM-AECP Unsolicited Response was received. */
 	virtual void onAemAecpUnsolicitedReceived(la::avdecc::entity::controller::Interface const* const controller, la::avdecc::UniqueIdentifier const& entityID, la::avdecc::protocol::AecpSequenceID const sequenceID) noexcept = 0;
 	/** Notification for when an MVU-AECP Unsolicited Response was received. */
@@ -728,7 +728,7 @@ public:
 	/** Notification for when an AECP Response is received but is not expected (might have already timed out). */
 	virtual void onAecpUnexpectedResponse(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& /*entityID*/) noexcept override {}
 	/** Notification for when an AECP Response is received (not an Unsolicited one) along with the time elapsed between the send and the receive. */
-	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& /*entityID*/, std::chrono::milliseconds const& /*responseTime*/) noexcept override {}
+	virtual void onAecpResponseTime(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& /*entityID*/, std::chrono::microseconds const& /*responseTime*/) noexcept override {}
 	/** Notification for when an AEM-AECP Unsolicited Response was received. */
 	virtual void onAemAecpUnsolicitedReceived(la::avdecc::entity::controller::Interface const* const /*controller*/, la::avdecc::UniqueIdentifier const& /*entityID*/, la::avdecc::protocol::AecpSequenceID const /*sequenceID*/) noexcept override {}
 	/** Notification for when an MVU-AECP Unsolicited Response was received. */

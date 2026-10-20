@@ -251,7 +251,7 @@ public:
 	virtual std::uint64_t getAecpRetryCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
 	virtual std::uint64_t getAecpTimeoutCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
 	virtual std::uint64_t getAecpUnexpectedResponseCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
-	virtual std::chrono::milliseconds const& getAecpResponseAverageTime(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
+	virtual std::chrono::microseconds const& getAecpResponseAverageTime(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
 	virtual std::uint64_t getAemAecpUnsolicitedCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
 	virtual std::uint64_t getAemAecpUnsolicitedLossCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;
 	virtual std::uint64_t getMvuAecpUnsolicitedCounter(InterfaceType const interfaceType = InterfaceType::Primary) const noexcept = 0;

@@ -40,7 +40,17 @@ public:
 	~PcapInterface();
 
 	bool is_available() const;
-	pcap_t* open_live(const char*, int, int, int, char*) const;
+	pcap_t* create(const char*, char*) const;
+	int set_snaplen(pcap_t*, int) const;
+	int set_promisc(pcap_t*, int) const;
+	int set_timeout(pcap_t*, int) const;
+#ifdef _WIN32
+	int setmintocopy(pcap_t*, int) const;
+#else // !_WIN32
+	int set_immediate_mode(pcap_t*, int) const;
+#endif // _WIN32
+	int activate(pcap_t*) const;
+	char* geterr(pcap_t*) const;
 	int fileno(pcap_t*) const;
 	void close(pcap_t*) const;
 	int compile(pcap_t*, struct bpf_program*, const char*, int, bpf_u_int32) const;
