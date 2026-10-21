@@ -53,6 +53,10 @@ namespace la
 {
 namespace avdecc
 {
+namespace networkInterfaceHelper
+{
+LA_AVDECC_API networkInterface::NetworkInterfaceHelper& LA_AVDECC_CALL_CONVENTION getInstance() noexcept;
+}
 namespace protocol
 {
 class ProtocolInterface : public la::avdecc::utils::Subject<ProtocolInterface, std::recursive_mutex>

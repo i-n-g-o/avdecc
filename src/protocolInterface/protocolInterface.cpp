@@ -53,6 +53,13 @@ namespace la
 {
 namespace avdecc
 {
+namespace networkInterfaceHelper
+{
+	networkInterface::NetworkInterfaceHelper& LA_AVDECC_CALL_CONVENTION getInstance() noexcept
+	{
+		return networkInterface::NetworkInterfaceHelper::getInstance();
+	}
+}
 namespace protocol
 {
 // Throws an Exception if networkInterfaceID is not usable
