@@ -2664,6 +2664,20 @@ void ControlledEntityImpl::setDynamicInfoExpected(entity::model::ConfigurationIn
 	conf.insert(key);
 }
 
+bool ControlledEntityImpl::isDynamicInfoExpected(entity::model::ConfigurationIndex const configurationIndex, DynamicInfoType const dynamicInfoType, entity::model::DescriptorIndex const descriptorIndex, std::uint16_t const subIndex) const noexcept
+{
+	AVDECC_ASSERT(_sharedLock->_lockedCount > 0, "ControlledEntity should be locked");
+
+	auto const confIt = _expectedDynamicInfo.find(configurationIndex);
+
+	if (confIt == _expectedDynamicInfo.end())
+		return false;
+
+	auto const key = makeDynamicInfoKey(dynamicInfoType, descriptorIndex, subIndex);
+
+	return confIt->second.count(key) == 1;
+}
+
 void ControlledEntityImpl::clearAllExpectedDynamicInfo() noexcept
 {
 	AVDECC_ASSERT(_sharedLock->_lockedCount > 0, "ControlledEntity should be locked");

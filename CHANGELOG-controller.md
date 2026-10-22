@@ -38,9 +38,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Misbehaving compatibility change recorded as a simple loss of the IEEE1722.1 compatibility (the event did not include the Misbehaving flag), and notified twice to the observers
 - `Controller::Observer::onAecpResponseAverageTimeChanged` never notified
 - Crash when saving an entity dump (text format) containing a string that is not a valid UTF-8 string, an error is now returned (and the file is not altered)
-
-### Fixed
-- query InputStreamState if a pervious query for InputStreamInfoEx failed
+- [Input streams connection state not retrieved during the enumeration of a Milan 1.3+ entity when GET_STREAM_INPUT_INFO_EX fails (now falling back to GET_RX_STATE)](https://github.com/L-Acoustics/avdecc/pull/199)
 
 ## [4.3.1] - 2025-12-19
 ### Fixed
