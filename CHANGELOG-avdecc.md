@@ -29,6 +29,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - JSON serialization of an unknown entity counter, preventing the file from being loaded
 - JSON serialization of an ACMP status not defined by the library (saved as `INVALID_STATUS`), preventing the file from being loaded
 - JSON serialization of an AvdeccFixedString that is not a valid UTF-8 string (eg. an entity name sent by an entity), preventing the dump from being saved as text: it is now serialized as an array of bytes
+- JSON schemas not usable by validators (invalid meta-schema URI, invalid references), AEM schema not matching the dumped entity model (missing descriptors, wrong types and required fields, unknown values)
 
 ## [4.3.1] - 2025-12-19
 ### Added
