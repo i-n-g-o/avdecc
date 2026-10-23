@@ -225,4 +225,38 @@ TEST(JsonTypes, ControlValueTypeAndUnit)
 	}
 }
 
+TEST(JsonTypes, TypedDefine)
+{
+	// Known value
+	{
+		json const j = la::avdecc::protocol::AcmpStatus::NoSuchConnection;
+		EXPECT_EQ("NO_SUCH_CONNECTION", j.get<std::string>());
+		EXPECT_EQ(la::avdecc::protocol::AcmpStatus::NoSuchConnection, j.get<la::avdecc::protocol::AcmpStatus>());
+	}
+	// Unknown value
+	{
+		auto const value = la::avdecc::protocol::AcmpStatus{ 15u };
+		json const j = value;
+		EXPECT_EQ("0x0F", j.get<std::string>());
+		EXPECT_EQ(value, j.get<la::avdecc::protocol::AcmpStatus>());
+	}
+	// Invalid values
+	EXPECT_THROW(json("INVALID_STATUS").get<la::avdecc::protocol::AcmpStatus>(), json::type_error);
+	EXPECT_THROW(json("0x123").get<la::avdecc::protocol::AcmpStatus>(), json::type_error);
+	EXPECT_THROW(json(15).get<la::avdecc::protocol::AcmpStatus>(), json::type_error);
+}
+
+TEST(JsonTypes, StreamDynamicInfo)
+{
+	auto info = model::StreamDynamicInfo{};
+	info.msrpFailureCode = static_cast<model::MsrpFailureCode>(25);
+	info.probingStatus = static_cast<model::ProbingStatus>(7);
+	info.acmpStatus = la::avdecc::protocol::AcmpStatus{ 15u };
+
+	auto const back = roundTrip(info);
+	EXPECT_EQ(info.msrpFailureCode, back.msrpFailureCode);
+	EXPECT_EQ(info.probingStatus, back.probingStatus);
+	EXPECT_EQ(info.acmpStatus, back.acmpStatus);
+}
+
 #endif // ENABLE_AVDECC_FEATURE_JSON

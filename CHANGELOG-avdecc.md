@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - No delay for queued AECP command when the entity answered in less than 1 msec (massive enumeration time improvement)
 - JSON serialization of an enum value not defined by the library (out of specification, or from a more recent specification) silently replaced by another value (eg. an unknown MemoryObjectType saved as `FIRMWARE_IMAGE`): it is now saved as its hexadecimal representation
 - JSON serialization of an unknown entity counter, preventing the file from being loaded
+- JSON serialization of an ACMP status not defined by the library (saved as `INVALID_STATUS`), preventing the file from being loaded
 
 ## [4.3.1] - 2025-12-19
 ### Added

@@ -483,11 +483,49 @@ namespace avdecc
 {
 namespace utils
 {
-/* TypedDefined conversion */
+/* TypedDefined conversion (Define must have a fromString method) */
+template<typename Define, typename DerivedType = typename Define::derived_type, typename ValueType = typename Define::value_type, typename = std::enable_if_t<std::is_base_of_v<TypedDefine<DerivedType, ValueType>, Define>>>
+void to_json(json& j, Define const& value)
+{
+	// The string representation of a value not defined by the library cannot be converted back (eg. "INVALID_STATUS"), use the hexadecimal representation of the value instead so no information is lost
+	auto const str = static_cast<std::string>(value);
+	try
+	{
+		auto v = Define{};
+		v.fromString(str);
+		if (v == value)
+		{
+			j = str;
+			return;
+		}
+	}
+	catch (std::invalid_argument const&)
+	{
+	}
+
+	auto const hexValue = toHexString(value.getValue(), true, true);
+	logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown TypedDefine value: ") + hexValue);
+	j = hexValue;
+}
 template<typename Define, typename DerivedType = typename Define::derived_type, typename ValueType = typename Define::value_type, typename = std::enable_if_t<std::is_base_of_v<TypedDefine<DerivedType, ValueType>, Define>>>
 void from_json(json const& j, Define& value)
 {
-	value.fromString(j.get<std::string>());
+	auto const str = j.get<std::string>();
+	try
+	{
+		value.fromString(str);
+	}
+	catch (std::invalid_argument const&)
+	{
+		// Not a string representation, should be the hexadecimal representation of a value not defined by the library
+		auto const v = jsonSerializer::detail::parseHexValue<std::uint64_t>(str);
+		if (!v || *v > static_cast<std::uint64_t>(std::numeric_limits<ValueType>::max()))
+		{
+			throw json::type_error::create(302, std::string("Unsupported TypedDefine value: ") + str, &j);
+		}
+		logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown TypedDefine value: ") + str);
+		value.setValue(static_cast<ValueType>(*v));
+	}
 }
 
 /* EnumBitfield conversion (EnumValue must be defined using AVDECC_JSON_SERIALIZE_ENUM, so unknown flags are not lost) */
