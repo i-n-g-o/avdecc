@@ -45,27 +45,13 @@ namespace model
 {
 /* AcquireState conversion */
 AVDECC_JSON_SERIALIZE_ENUM(AcquireState, {
-																						 { AcquireState::Undefined, "UNKNOWN" },
-																						 { AcquireState::NotSupported, "NOT_SUPPORTED" },
-																						 { AcquireState::NotAcquired, "NOT_ACQUIRED" },
-																						 { AcquireState::AcquireInProgress, "ACQUIRE_IN_PROGRESS" },
-																						 { AcquireState::Acquired, "ACQUIRED" },
-																						 { AcquireState::AcquiredByOther, "ACQUIRED_BY_OTHER" },
-																						 { AcquireState::ReleaseInProgress, "RELEASE_IN_PROGRESS" },
-																						 { AcquireState::AcquireInProgress, "TRY_ACQUIRE" }, // Legacy name, for compatibility with older files
-																					 });
+																					 { AcquireState::Undefined, "UNKNOWN" }, { AcquireState::NotSupported, "NOT_SUPPORTED" }, { AcquireState::NotAcquired, "NOT_ACQUIRED" }, { AcquireState::AcquireInProgress, "ACQUIRE_IN_PROGRESS" }, { AcquireState::Acquired, "ACQUIRED" }, { AcquireState::AcquiredByOther, "ACQUIRED_BY_OTHER" }, { AcquireState::ReleaseInProgress, "RELEASE_IN_PROGRESS" }, { AcquireState::AcquireInProgress, "TRY_ACQUIRE" }, // Legacy name, for compatibility with older files
+																				 });
 
 /* LockState conversion */
 AVDECC_JSON_SERIALIZE_ENUM(LockState, {
-																					{ LockState::Undefined, "UNKNOWN" },
-																					{ LockState::NotSupported, "NOT_SUPPORTED" },
-																					{ LockState::NotLocked, "NOT_LOCKED" },
-																					{ LockState::LockInProgress, "LOCK_IN_PROGRESS" },
-																					{ LockState::Locked, "LOCKED" },
-																					{ LockState::LockedByOther, "LOCKED_BY_OTHER" },
-																					{ LockState::UnlockInProgress, "UNLOCK_IN_PROGRESS" },
-																					{ LockState::LockInProgress, "TRY_LOCK" }, // Legacy name, for compatibility with older files
-																				});
+																				{ LockState::Undefined, "UNKNOWN" }, { LockState::NotSupported, "NOT_SUPPORTED" }, { LockState::NotLocked, "NOT_LOCKED" }, { LockState::LockInProgress, "LOCK_IN_PROGRESS" }, { LockState::Locked, "LOCKED" }, { LockState::LockedByOther, "LOCKED_BY_OTHER" }, { LockState::UnlockInProgress, "UNLOCK_IN_PROGRESS" }, { LockState::LockInProgress, "TRY_LOCK" }, // Legacy name, for compatibility with older files
+																			});
 
 } // namespace model
 
@@ -110,12 +96,12 @@ constexpr auto ControlledEntityCompatibilityChangedEvent_Timestamp = "timestamp"
 
 /* ControlledEntity::CompatibilityFlag conversion */
 AVDECC_JSON_SERIALIZE_ENUM(ControlledEntity::CompatibilityFlag, {
-																																		{ ControlledEntity::CompatibilityFlag::IEEE17221, "IEEE17221" },
-																																		{ ControlledEntity::CompatibilityFlag::Milan, "MILAN" },
-																																		{ ControlledEntity::CompatibilityFlag::IEEE17221Warning, "IEEE17221WARNING" },
-																																		{ ControlledEntity::CompatibilityFlag::MilanWarning, "MILANWARNING" },
-																																		{ ControlledEntity::CompatibilityFlag::Misbehaving, "MISBEHAVING" },
-																																	});
+																																	{ ControlledEntity::CompatibilityFlag::IEEE17221, "IEEE17221" },
+																																	{ ControlledEntity::CompatibilityFlag::Milan, "MILAN" },
+																																	{ ControlledEntity::CompatibilityFlag::IEEE17221Warning, "IEEE17221WARNING" },
+																																	{ ControlledEntity::CompatibilityFlag::MilanWarning, "MILANWARNING" },
+																																	{ ControlledEntity::CompatibilityFlag::Misbehaving, "MISBEHAVING" },
+																																});
 
 /* CompatibilityChangedEvent conversion */
 inline void to_json(json& j, ControlledEntity::CompatibilityChangedEvent const& event)
