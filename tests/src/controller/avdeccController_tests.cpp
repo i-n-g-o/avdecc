@@ -739,6 +739,139 @@ TEST(Controller, InvalidAudioMappings)
 	std::filesystem::remove(filePath);
 }
 
+/*
+ * Entity dump/load: an entity dump must not lose any information, even for values not defined by the library (out of specification, or from a more recent specification).
+ * A string that is not a valid UTF-8 string cannot be dumped as a JSON string, it must not prevent the dump.
+ */
+TEST(Controller, OutOfSpecificationValuesJsonRoundTrip)
+{
+	auto constexpr EntityID = la::avdecc::UniqueIdentifier{ 0x001B92FFFF000001 };
+	auto const flags = la::avdecc::entity::model::jsonSerializer::Flags{ la::avdecc::entity::model::jsonSerializer::Flag::IgnoreAEMSanityChecks, la::avdecc::entity::model::jsonSerializer::Flag::ProcessADP, la::avdecc::entity::model::jsonSerializer::Flag::ProcessCompatibility, la::avdecc::entity::model::jsonSerializer::Flag::ProcessDynamicModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessMilan, la::avdecc::entity::model::jsonSerializer::Flag::ProcessState, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStaticModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStatistics };
+	auto const filePath = std::filesystem::temp_directory_path() / "OutOfSpecificationValues.json";
+	auto const dumpPath = std::filesystem::temp_directory_path() / "OutOfSpecificationValuesDump.json";
+	auto const reDumpPath = std::filesystem::temp_directory_path() / "OutOfSpecificationValuesReDump.json";
+
+	// Not a valid UTF-8 string ("LA12X Unit Test \xe9" encoded in latin-1)
+	auto const entityName = nlohmann::json::array({ 76, 65, 49, 50, 88, 32, 85, 110, 105, 116, 32, 84, 101, 115, 116, 32, 233 });
+	auto const entityCounters = nlohmann::json{ { "0x00000001", 5 }, { "ENTITY_SPECIFIC_1", 6 } };
+
+	// Inject values not defined by the library in a valid entity
+	{
+		auto object = nlohmann::json{};
+		{
+			auto ifs = std::ifstream{ "data/SimpleEntity.json" };
+			object = nlohmann::json::parse(ifs);
+		}
+		auto& entityDescriptor = object.at("entity_model").at("entity_descriptor");
+		auto& configuration = entityDescriptor.at("configuration_descriptors").at(0);
+		auto& streamDynamicInfo = configuration.at("stream_input_descriptors").at(0).at("dynamic").at("stream_dynamic_info");
+		entityDescriptor.at("dynamic").at("entity_name") = entityName;
+		entityDescriptor.at("dynamic").at("counters") = entityCounters;
+		configuration.at("memory_object_descriptors").at(0).at("static").at("memory_object_type") = "0x0020";
+		streamDynamicInfo.at("acmp_status") = "0x0F";
+		streamDynamicInfo.at("msrp_failure_code") = "0x19";
+		streamDynamicInfo.at("probing_status") = 7;
+
+		auto ofs = std::ofstream{ filePath };
+		ofs << object.dump();
+	}
+
+	// Load the entity and dump it as text
+	auto const loadAndDump = [&flags, EntityID](std::filesystem::path const& inputPath, std::filesystem::path const& outputPath)
+	{
+		auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+		auto const [loadError, loadMessage] = controller->loadVirtualEntityFromJson(inputPath.string(), flags);
+		EXPECT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, loadError) << loadMessage;
+		auto const [dumpError, dumpMessage] = controller->serializeControlledEntityAsJson(EntityID, outputPath.string(), flags, "unit test");
+		EXPECT_EQ(la::avdecc::jsonSerializer::SerializationError::NoError, dumpError) << dumpMessage;
+		auto ifs = std::ifstream{ outputPath };
+		return nlohmann::json::parse(ifs);
+	};
+
+	// The values must be dumped as they were loaded
+	auto const dump = loadAndDump(filePath, dumpPath);
+	{
+		auto const& entityDescriptor = dump.at("entity_model").at("entity_descriptor");
+		auto const& configuration = entityDescriptor.at("configuration_descriptors").at(0);
+		auto const& streamDynamicInfo = configuration.at("stream_input_descriptors").at(0).at("dynamic").at("stream_dynamic_info");
+		EXPECT_EQ(entityName, entityDescriptor.at("dynamic").at("entity_name"));
+		EXPECT_EQ(entityCounters, entityDescriptor.at("dynamic").at("counters"));
+		EXPECT_EQ("0x0020", configuration.at("memory_object_descriptors").at(0).at("static").at("memory_object_type"));
+		EXPECT_EQ("0x0F", streamDynamicInfo.at("acmp_status"));
+		EXPECT_EQ("0x19", streamDynamicInfo.at("msrp_failure_code"));
+		EXPECT_EQ(7, streamDynamicInfo.at("probing_status"));
+	}
+
+	// Loading the dump must give the same entity model
+	auto const reDump = loadAndDump(dumpPath, reDumpPath);
+	{
+		// DescriptorCounts is an unordered map, the order of its items in the dump is not guaranteed
+		auto const extractDescriptorCounts = [](nlohmann::json& entityModel)
+		{
+			auto& staticModel = entityModel.at("entity_descriptor").at("configuration_descriptors").at(0).at("static");
+			auto const descriptorCounts = staticModel.at("descriptor_counts").get<la::avdecc::entity::model::DescriptorCounts>();
+			staticModel.erase("descriptor_counts");
+			return descriptorCounts;
+		};
+		auto entityModel = dump.at("entity_model");
+		auto reEntityModel = reDump.at("entity_model");
+		EXPECT_EQ(extractDescriptorCounts(entityModel), extractDescriptorCounts(reEntityModel));
+		EXPECT_EQ(entityModel, reEntityModel);
+	}
+
+	std::filesystem::remove(reDumpPath);
+	std::filesystem::remove(dumpPath);
+	std::filesystem::remove(filePath);
+}
+
+/*
+ * Entity dump: a JSON object containing an invalid UTF-8 string cannot be dumped as text, this must be reported as an error (and not crash).
+ * Such a string can be loaded from a binary dump (MessagePack doesn't validate UTF-8 strings).
+ */
+TEST(Controller, JsonDumpOfInvalidUtf8String)
+{
+	auto constexpr EntityID = la::avdecc::UniqueIdentifier{ 0x001B92FFFF000001 };
+	auto const flags = la::avdecc::entity::model::jsonSerializer::Flags{ la::avdecc::entity::model::jsonSerializer::Flag::IgnoreAEMSanityChecks, la::avdecc::entity::model::jsonSerializer::Flag::ProcessADP, la::avdecc::entity::model::jsonSerializer::Flag::ProcessCompatibility, la::avdecc::entity::model::jsonSerializer::Flag::ProcessDynamicModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessMilan, la::avdecc::entity::model::jsonSerializer::Flag::ProcessState, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStaticModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStatistics };
+	auto const filePath = std::filesystem::temp_directory_path() / "InvalidUtf8String.ave";
+	auto const dumpPath = std::filesystem::temp_directory_path() / "InvalidUtf8StringDump.json";
+	std::filesystem::remove(dumpPath);
+
+	// Create a binary dump with a compatibility event containing an invalid UTF-8 string
+	{
+		auto object = nlohmann::json{};
+		{
+			auto ifs = std::ifstream{ "data/SimpleEntity.json" };
+			object = nlohmann::json::parse(ifs);
+		}
+		object["compatibility_events"] = nlohmann::json::array({ { { "previous_flags", nlohmann::json::array({ "IEEE17221", "MILAN" }) }, { "new_flags", nlohmann::json::array({ "IEEE17221" }) }, { "previous_milan_version", "1.3.0.0" }, { "new_milan_version", "0.0.0.0" }, { "spec_clause", "Milan 1.3 - 5.3.10.1" }, { "message", "Invalid UTF-8 \xff" }, { "timestamp", 0 } } });
+		auto const binary = nlohmann::json::to_msgpack(object);
+		auto ofs = std::ofstream{ filePath, std::ios::binary };
+		ofs.write(reinterpret_cast<char const*>(binary.data()), binary.size());
+	}
+
+	auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+	{
+		auto binaryFlags = flags;
+		binaryFlags.set(la::avdecc::entity::model::jsonSerializer::Flag::BinaryFormat);
+		auto const [loadError, loadMessage] = controller->loadVirtualEntityFromJson(filePath.string(), binaryFlags);
+		ASSERT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, loadError) << loadMessage;
+	}
+
+	// Dump as text: error reported, and no file created
+	{
+		auto const [dumpError, dumpMessage] = controller->serializeControlledEntityAsJson(EntityID, dumpPath.string(), flags, "unit test");
+		EXPECT_EQ(la::avdecc::jsonSerializer::SerializationError::InternalError, dumpError);
+		EXPECT_FALSE(std::filesystem::exists(dumpPath));
+	}
+	{
+		auto const [dumpError, dumpMessage] = controller->serializeAllControlledEntitiesAsJson(dumpPath.string(), flags, "unit test", true);
+		EXPECT_EQ(la::avdecc::jsonSerializer::SerializationError::InternalError, dumpError);
+		EXPECT_FALSE(std::filesystem::exists(dumpPath));
+	}
+
+	std::filesystem::remove(filePath);
+}
+
 namespace
 {
 class Builder : public la::avdecc::controller::model::DefaultedVirtualEntityBuilder

@@ -259,4 +259,35 @@ TEST(JsonTypes, StreamDynamicInfo)
 	EXPECT_EQ(info.acmpStatus, back.acmpStatus);
 }
 
+TEST(JsonTypes, AvdeccFixedString)
+{
+	// Valid UTF-8 string
+	{
+		auto const str = model::AvdeccFixedString{ "Valid UTF-8 \xc3\xa9" };
+		json const j = str;
+		EXPECT_EQ("Valid UTF-8 \xc3\xa9", j.get<std::string>());
+		EXPECT_EQ(str, j.get<model::AvdeccFixedString>());
+	}
+	// Not a valid UTF-8 string (latin-1 encoded)
+	{
+		auto const str = model::AvdeccFixedString{ "Latin-1 \xe9" };
+		json const j = str;
+		EXPECT_EQ((json{ 76, 97, 116, 105, 110, 45, 49, 32, 233 }), j);
+		EXPECT_NO_THROW(j.dump());
+		EXPECT_EQ(str, j.get<model::AvdeccFixedString>());
+	}
+	// All bytes used (not NULL terminated)
+	{
+		auto const bytes = std::string(model::AvdeccFixedString::MaxLength, '\xff');
+		auto const str = model::AvdeccFixedString{ bytes };
+		json const j = str;
+		EXPECT_EQ(model::AvdeccFixedString::MaxLength, j.size());
+		EXPECT_EQ(str, j.get<model::AvdeccFixedString>());
+	}
+	// Invalid byte values
+	EXPECT_THROW((json{ 97, 256 }).get<model::AvdeccFixedString>(), json::type_error);
+	EXPECT_THROW((json{ 97, -1 }).get<model::AvdeccFixedString>(), json::type_error);
+	EXPECT_THROW((json{ 97, "b" }).get<model::AvdeccFixedString>(), json::type_error);
+}
+
 #endif // ENABLE_AVDECC_FEATURE_JSON

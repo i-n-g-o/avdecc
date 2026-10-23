@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - JSON serialization of an enum value not defined by the library (out of specification, or from a more recent specification) silently replaced by another value (eg. an unknown MemoryObjectType saved as `FIRMWARE_IMAGE`): it is now saved as its hexadecimal representation
 - JSON serialization of an unknown entity counter, preventing the file from being loaded
 - JSON serialization of an ACMP status not defined by the library (saved as `INVALID_STATUS`), preventing the file from being loaded
+- JSON serialization of an AvdeccFixedString that is not a valid UTF-8 string (eg. an entity name sent by an entity), preventing the dump from being saved as text: it is now serialized as an array of bytes
 
 ## [4.3.1] - 2025-12-19
 ### Added

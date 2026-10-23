@@ -152,6 +152,20 @@ void enumFromJson(json const& j, EnumType& value, std::pair<EnumType, char const
 	throw json::type_error::create(302, std::string("Unsupported Enum value: ") + j.dump(-1, ' ', false, json::error_handler_t::replace), &j);
 }
 
+/** Returns true if the string is a valid UTF-8 string (using the json library validation, so that the string can safely be dumped) */
+inline bool isValidUtf8String(std::string const& str) noexcept
+{
+	try
+	{
+		[[maybe_unused]] auto const dumped = json(str).dump();
+		return true;
+	}
+	catch (json::type_error const&)
+	{
+		return false;
+	}
+}
+
 } // namespace detail
 } // namespace jsonSerializer
 } // namespace avdecc
@@ -1644,7 +1658,43 @@ inline void from_json(json const& j, LocalizedStringReference& ref)
 /* AvdeccFixedString conversion */
 inline void to_json(json& j, AvdeccFixedString const& str)
 {
-	j = str.str();
+	auto const s = str.str();
+
+	// An AvdeccFixedString should be a valid UTF-8 string, but some entities don't respect this.
+	// A JSON string must be a valid UTF-8 string, so serialize the raw bytes instead (as an array of numbers) so no information is lost (and the JSON can still be dumped)
+	if (!la::avdecc::jsonSerializer::detail::isValidUtf8String(s))
+	{
+		logJsonSerializer(la::avdecc::logger::Level::Warn, "AvdeccFixedString is not a valid UTF-8 string, serializing as an array of bytes");
+		auto arr = json::array();
+		for (auto const c : s)
+		{
+			arr.push_back(static_cast<std::uint8_t>(c));
+		}
+		j = std::move(arr);
+		return;
+	}
+
+	j = s;
+}
+inline void from_json(json const& j, AvdeccFixedString& str)
+{
+	// Not a valid UTF-8 string, raw bytes serialized as an array of numbers
+	if (j.is_array())
+	{
+		auto bytes = std::string{};
+		for (auto const& b : j)
+		{
+			if (!b.is_number_integer() || b.get<std::int64_t>() < 0 || b.get<std::int64_t>() > std::numeric_limits<std::uint8_t>::max())
+			{
+				throw json::type_error::create(302, std::string("Unsupported AvdeccFixedString byte value: ") + b.dump(), &b);
+			}
+			bytes.push_back(static_cast<std::string::value_type>(b.get<std::uint8_t>()));
+		}
+		str.assign(bytes);
+		return;
+	}
+
+	str.assign(j.get<std::string>());
 }
 
 /* MsrpMapping conversion */
