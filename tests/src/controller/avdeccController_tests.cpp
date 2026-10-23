@@ -33,6 +33,7 @@
 // Internal API
 #include "controller/avdeccControlledEntityImpl.hpp"
 #include "controller/avdeccControllerImpl.hpp"
+#include "controller/avdeccControllerJsonTypes.hpp"
 #include "controller/avdeccControllerProxy.hpp"
 #include "entity/controllerEntityImpl.hpp"
 #include "la/avdecc/internals/entityModelTreeCommon.hpp"
@@ -1880,6 +1881,30 @@ TEST(Controller, StatisticsJsonFormats)
 	}
 
 	std::filesystem::remove(dumpPath);
+}
+
+/*
+ * Entity state dump/load: the names used by older versions of the library are still loadable (but never written).
+ */
+TEST(Controller, StateJsonLegacyNames)
+{
+	using AcquireState = la::avdecc::controller::model::AcquireState;
+	using LockState = la::avdecc::controller::model::LockState;
+
+	EXPECT_EQ(AcquireState::AcquireInProgress, nlohmann::json("TRY_ACQUIRE").get<AcquireState>());
+	EXPECT_EQ(LockState::LockInProgress, nlohmann::json("TRY_LOCK").get<LockState>());
+	{
+		nlohmann::json const j = AcquireState::AcquireInProgress;
+		EXPECT_EQ("ACQUIRE_IN_PROGRESS", j.get<std::string>());
+	}
+	{
+		nlohmann::json const j = LockState::LockInProgress;
+		EXPECT_EQ("LOCK_IN_PROGRESS", j.get<std::string>());
+	}
+
+	// Unknown name
+	EXPECT_THROW(nlohmann::json("NOT_A_STATE").get<AcquireState>(), nlohmann::json::type_error);
+	EXPECT_THROW(nlohmann::json("NOT_A_STATE").get<LockState>(), nlohmann::json::type_error);
 }
 
 namespace

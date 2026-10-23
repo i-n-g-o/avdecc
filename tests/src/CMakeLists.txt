@@ -24,6 +24,7 @@ set(TESTS_SOURCE
 	entity_tests.cpp
 	entityModel_tests.cpp
 	instrumentationObserver.hpp
+	jsonTypes_tests.cpp
 	logger_tests.cpp
 	memoryBuffer_tests.cpp
 	protocolAvtpdu_tests.cpp

@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ### Changed
 - **API break**: AECP response time (`ProtocolInterface::Observer::onAecpResponseTime`, `entity::controller::Delegate::onAecpResponseTime` and the C bindings `onAecpResponseTime`) is now in microseconds (was milliseconds)
+- JSON deserialization of an unknown enum name now fails (it was silently replaced by a default value)
+- StreamOutputCounters `counter_type` is now serialized as a string in JSON files (files using a number are still loadable)
 
 ### Fixed 
 - Better debugger support for MacOs and Linux builds
@@ -23,6 +25,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Thread names not being set on Linux, where names longer than 15 characters are rejected (`utils::setCurrentThreadName` now returns whether the name was set, and the library falls back to shorter names)
 - pcap ProtocolInterface delaying each received message until the capture timeout expired (up to 15 msec)
 - No delay for queued AECP command when the entity answered in less than 1 msec (massive enumeration time improvement)
+- JSON serialization of an enum value not defined by the library (out of specification, or from a more recent specification) silently replaced by another value (eg. an unknown MemoryObjectType saved as `FIRMWARE_IMAGE`): it is now saved as its hexadecimal representation
+- JSON serialization of an unknown entity counter, preventing the file from being loaded
 
 ## [4.3.1] - 2025-12-19
 ### Added

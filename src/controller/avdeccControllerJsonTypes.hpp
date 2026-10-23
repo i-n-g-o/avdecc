@@ -27,6 +27,7 @@
 #pragma once
 
 #include "la/avdecc/utils.hpp"
+#include "la/avdecc/internals/jsonTypes.hpp"
 #include "la/avdecc/controller/avdeccController.hpp"
 #include "la/avdecc/controller/internals/avdeccControlledEntity.hpp"
 
@@ -43,7 +44,7 @@ namespace controller
 namespace model
 {
 /* AcquireState conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AcquireState, {
+AVDECC_JSON_SERIALIZE_ENUM(AcquireState, {
 																						 { AcquireState::Undefined, "UNKNOWN" },
 																						 { AcquireState::NotSupported, "NOT_SUPPORTED" },
 																						 { AcquireState::NotAcquired, "NOT_ACQUIRED" },
@@ -51,10 +52,11 @@ NLOHMANN_JSON_SERIALIZE_ENUM(AcquireState, {
 																						 { AcquireState::Acquired, "ACQUIRED" },
 																						 { AcquireState::AcquiredByOther, "ACQUIRED_BY_OTHER" },
 																						 { AcquireState::ReleaseInProgress, "RELEASE_IN_PROGRESS" },
+																						 { AcquireState::AcquireInProgress, "TRY_ACQUIRE" }, // Legacy name, for compatibility with older files
 																					 });
 
 /* LockState conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(LockState, {
+AVDECC_JSON_SERIALIZE_ENUM(LockState, {
 																					{ LockState::Undefined, "UNKNOWN" },
 																					{ LockState::NotSupported, "NOT_SUPPORTED" },
 																					{ LockState::NotLocked, "NOT_LOCKED" },
@@ -62,6 +64,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(LockState, {
 																					{ LockState::Locked, "LOCKED" },
 																					{ LockState::LockedByOther, "LOCKED_BY_OTHER" },
 																					{ LockState::UnlockInProgress, "UNLOCK_IN_PROGRESS" },
+																					{ LockState::LockInProgress, "TRY_LOCK" }, // Legacy name, for compatibility with older files
 																				});
 
 } // namespace model
@@ -106,8 +109,7 @@ constexpr auto ControlledEntityCompatibilityChangedEvent_Timestamp = "timestamp"
 } // namespace keyName
 
 /* ControlledEntity::CompatibilityFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ControlledEntity::CompatibilityFlag, {
-																																		{ ControlledEntity::CompatibilityFlag::None, "UNKNOWN" },
+AVDECC_JSON_SERIALIZE_ENUM(ControlledEntity::CompatibilityFlag, {
 																																		{ ControlledEntity::CompatibilityFlag::IEEE17221, "IEEE17221" },
 																																		{ ControlledEntity::CompatibilityFlag::Milan, "MILAN" },
 																																		{ ControlledEntity::CompatibilityFlag::IEEE17221Warning, "IEEE17221WARNING" },
