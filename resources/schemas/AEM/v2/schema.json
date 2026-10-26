@@ -1,10 +1,19 @@
 {
-	"$schema": "http://json-schema.org/draft/2020-12/schema#",
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
 	"title": "AEM Tree Schema",
-	"description": "JSON validation schema for ATDECC Entity Model Tree",
+	"description": "JSON validation schema for ATDECC Entity Model Tree (static model only)",
 	"type": "object",
-	"schema_version": "2025.03.11",
-	"$aemFormat": {
+	"schema_version": "2026.10.23",
+	"$defs": {
+		"descriptorIndex": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+		},
+		"localizedDescription": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/localizedDescriptionOrNull"
+		},
+		"avdeccString": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/avdeccString"
+		},
 		"entityDescriptor": {
 			"type": "object",
 			"properties": {
@@ -13,7 +22,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/configurationDescriptor"
+								"$ref": "#/$defs/configurationDescriptor"
 							}
 						},
 						{
@@ -22,7 +31,7 @@
 					]
 				},
 				"static": {
-					"$ref": "#/$aemFormat/entityDescriptorStaticModel"
+					"$ref": "#/$defs/entityDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -34,24 +43,10 @@
 			"type": "object",
 			"properties": {
 				"model_name_string": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"vendor_name_string": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				}
 			},
 			"required": [
@@ -63,17 +58,17 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/configurationDescriptorStaticModel"
+					"$ref": "#/$defs/configurationDescriptorStaticModel"
 				},
 				"audio_unit_descriptors": {
 					"oneOf": [
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/audioUnitDescriptor"
+								"$ref": "#/$defs/audioUnitDescriptor"
 							}
 						},
 						{
@@ -86,7 +81,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/streamDescriptor"
+								"$ref": "#/$defs/streamDescriptor"
 							}
 						},
 						{
@@ -99,7 +94,33 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/streamDescriptor"
+								"$ref": "#/$defs/streamDescriptor"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"jack_input_descriptors": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/jackDescriptor"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"jack_output_descriptors": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/jackDescriptor"
 							}
 						},
 						{
@@ -112,7 +133,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/avbInterfaceDescriptor"
+								"$ref": "#/$defs/avbInterfaceDescriptor"
 							}
 						},
 						{
@@ -125,7 +146,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/clockSourceDescriptor"
+								"$ref": "#/$defs/clockSourceDescriptor"
 							}
 						},
 						{
@@ -138,7 +159,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/memoryObjectDescriptor"
+								"$ref": "#/$defs/memoryObjectDescriptor"
 							}
 						},
 						{
@@ -151,7 +172,7 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/localeDescriptor"
+								"$ref": "#/$defs/localeDescriptor"
 							}
 						},
 						{
@@ -159,12 +180,41 @@
 						}
 					]
 				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptors"
+				},
 				"clock_domain_descriptors": {
 					"oneOf": [
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/clockDomainDescriptor"
+								"$ref": "#/$defs/clockDomainDescriptor"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"timing_descriptors": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/timingDescriptor"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"ptp_instance_descriptors": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/ptpInstanceDescriptor"
 							}
 						},
 						{
@@ -181,26 +231,22 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"descriptor_counts": {
+					"type": "array",
 					"items": {
 						"type": "array",
-						"items": [
+						"prefixItems": [
 							{
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorType"
+								"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorType"
 							},
 							{
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/uint8"
+								"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 							}
-						]
+						],
+						"minItems": 2,
+						"maxItems": 2
 					}
 				}
 			},
@@ -210,17 +256,20 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/audioUnitDescriptorStaticModel"
+					"$ref": "#/$defs/audioUnitDescriptorStaticModel"
+				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptors"
 				},
 				"stream_port_input_descriptors": {
 					"oneOf": [
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/streamPortDescriptor"
+								"$ref": "#/$defs/streamPortDescriptor"
 							}
 						},
 						{
@@ -233,16 +282,13 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/streamPortDescriptor"
+								"$ref": "#/$defs/streamPortDescriptor"
 							}
 						},
 						{
 							"type": "null"
 						}
 					]
-				},
-				"control_counts": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
@@ -255,27 +301,19 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"clock_domain_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"sampling_rates": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/samplingRate"
-							}
-						}
-					]
+					"type": "array",
+					"items": {
+						"$ref": "../../common/2026.10.23/schema.json#/$defs/samplingRate"
+					}
+				},
+				"control_counts": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
@@ -288,17 +326,17 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/streamPortDescriptorStaticModel"
+					"$ref": "#/$defs/streamPortDescriptorStaticModel"
 				},
 				"audio_cluster_descriptors": {
 					"oneOf": [
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/audioClusterDescriptor"
+								"$ref": "#/$defs/audioClusterDescriptor"
 							}
 						},
 						{
@@ -311,13 +349,16 @@
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/audioMapDescriptor"
+								"$ref": "#/$defs/audioMapDescriptor"
 							}
 						},
 						{
 							"type": "null"
 						}
 					]
+				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptors"
 				}
 			},
 			"required": [
@@ -330,41 +371,13 @@
 			"type": "object",
 			"properties": {
 				"clock_domain_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"flags": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/portFlag"
-							}
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/portFlags"
 				},
-				"number_of_controls": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
-				},
-				"base_control": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
-				},
-				"number_of_clusters": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
-				},
-				"base_cluster": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
-				},
-				"number_of_maps": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
-				},
-				"base_map": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
-				},
-				"has_dynamic_audio_map": {
-					"type": "boolean"
+				"control_counts": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
@@ -376,10 +389,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/audioClusterDescriptorStaticModel"
+					"$ref": "#/$defs/audioClusterDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -390,35 +403,28 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"signal_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorType"
 				},
 				"signal_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"signal_output": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"path_latency": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"block_latency": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"channel_count": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"format": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/audioClusterFormat"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/audioClusterFormat"
 				}
 			},
 			"required": [
@@ -436,10 +442,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/audioMapDescriptorStaticModel"
+					"$ref": "#/$defs/audioMapDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -452,7 +458,7 @@
 				"mappings": {
 					"type": "array",
 					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/audioMapping"
+						"$ref": "../../common/2026.10.23/schema.json#/$defs/audioMapping"
 					}
 				}
 			},
@@ -464,10 +470,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/streamDescriptorStaticModel"
+					"$ref": "#/$defs/streamDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -478,64 +484,54 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"clock_domain_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"stream_flags": {
-					"type": "array",
-					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/streamFlag"
-					}
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamFlags"
 				},
 				"backup_talker_entity_id_0": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"backup_talker_unique_id_0": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"backup_talker_entity_id_1": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"backup_talker_unique_id_1": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"backup_talker_entity_id_2": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"backup_talker_unique_id_2": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"backedup_talker_entity_id": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"backedup_talker_unique": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"avb_interface_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"buffer_length": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"formats": {
 					"type": "array",
 					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/streamFormat"
+						"$ref": "../../common/2026.10.23/schema.json#/$defs/streamFormat"
 					}
 				},
 				"redundant_streams": {
 					"type": "array",
 					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+						"$ref": "#/$defs/descriptorIndex"
 					}
 				}
 			},
@@ -560,10 +556,13 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/jackDescriptorStaticModel"
+					"$ref": "#/$defs/jackDescriptorStaticModel"
+				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptors"
 				}
 			},
 			"required": [
@@ -574,41 +573,21 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"flags": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/jackFlag"
-							}
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/jackFlags"
 				},
 				"type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/jackType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/jackType"
 				},
 				"control_counts": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
-				},
-				"base_control": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
 				"localized_description",
-				"flag",
+				"flags",
 				"type"
 			]
 		},
@@ -616,10 +595,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/avbInterfaceDescriptorStaticModel"
+					"$ref": "#/$defs/avbInterfaceDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -630,30 +609,13 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"flags": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/avbInterfaceFlag"
-							}
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/avbInterfaceFlags"
 				},
 				"port_number": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
@@ -666,10 +628,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/clockSourceDescriptorStaticModel"
+					"$ref": "#/$defs/clockSourceDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -680,23 +642,16 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"clock_source_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/clockSourceType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/clockSourceType"
 				},
 				"clock_source_location_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorType"
 				},
 				"clock_source_location_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				}
 			},
 			"required": [
@@ -710,10 +665,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/memoryObjectDescriptorStaticModel"
+					"$ref": "#/$defs/memoryObjectDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -724,30 +679,23 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"memory_object_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/memoryObjectType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/memoryObjectType"
 				},
 				"target_descriptor_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorType"
 				},
 				"target_descriptor_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"start_address": {
 					"type": "string",
 					"pattern": "^0x[0-9a-fA-F]{16}$"
 				},
 				"maximum_length": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint64"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
 				}
 			},
 			"required": [
@@ -759,62 +707,21 @@
 				"maximum_length"
 			]
 		},
-		"clockDomainDescriptor": {
-			"type": "object",
-			"properties": {
-				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
-				},
-				"static": {
-					"$ref": "#/$aemFormat/clockDomainDescriptorStaticModel"
-				}
-			},
-			"required": [
-				"static"
-			]
-		},
-		"clockDomainDescriptorStaticModel": {
-			"type": "object",
-			"properties": {
-				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
-				},
-				"clock_sources": {
-					"type": "array",
-					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
-					}
-				},
-				"default_media_clock_priority": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint8"
-				}
-			},
-			"required": [
-				"clock_sources"
-			]
-		},
 		"localeDescriptor": {
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/localeDescriptorStaticModel"
+					"$ref": "#/$defs/localeDescriptorStaticModel"
 				},
 				"strings_descriptors": {
 					"oneOf": [
 						{
 							"type": "array",
 							"items": {
-								"$ref": "#/$aemFormat/stringsDescriptor"
+								"$ref": "#/$defs/stringsDescriptor"
 							}
 						},
 						{
@@ -832,13 +739,10 @@
 			"type": "object",
 			"properties": {
 				"locale_id": {
-					"type": "string"
+					"$ref": "#/$defs/avdeccString"
 				},
-				"number_of_string_descriptors": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
-				},
-				"base_string_descriptor_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+				"_base_string_descriptor (informative)": {
+					"$ref": "#/$defs/descriptorIndex"
 				}
 			},
 			"required": [
@@ -849,10 +753,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/stringsDescriptorStaticModel"
+					"$ref": "#/$defs/stringsDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -865,120 +769,249 @@
 				"strings": {
 					"type": "array",
 					"items": {
-						"$ref": "../../common/2025.03.11/schema.json#/$defs/avdeccString"
-					}
+						"$ref": "#/$defs/avdeccString"
+					},
+					"maxItems": 7
 				}
 			},
 			"required": [
 				"strings"
 			]
 		},
-		"timing": {
-			"type": "object",
-			"properties": {
-				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+		"controlDescriptors": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/controlDescriptor"
+					}
 				},
-				"static": {
-					"$ref": "#/$aemFormat/timingStaticModel"
+				{
+					"type": "null"
 				}
-			},
-			"required": [
-				"static"
-			]
-		},
-		"timingStaticModel": {
-			"type": "object",
-			"properties": {
-				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
-				},
-				"algorithm": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/timingAlgorithm"
-				},
-				"ptp_instances": {
-					"$ref": "#/$aemFormat/ptpInstance"
-				}
-			},
-			"required": [
-				"localized_description",
-				"clock_identity",
-				"flags",
-				"control_counts",
-				"ptp_port_counts"
 			]
 		},
 		"controlDescriptor": {
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/controlStaticModel"
+					"$ref": "#/$defs/controlDescriptorStaticModel"
 				}
 			},
 			"required": [
 				"static"
 			]
 		},
+		"controlNumber": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/controlNumber"
+		},
+		"controlValueUnit": {
+			"type": "object",
+			"properties": {
+				"multiplier": {
+					"type": "integer",
+					"minimum": -128,
+					"maximum": 127
+				},
+				"code": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/controlValueUnit"
+				}
+			},
+			"required": [
+				"multiplier",
+				"code"
+			]
+		},
+		"linearValueStatic": {
+			"type": "object",
+			"properties": {
+				"minimum": {
+					"$ref": "#/$defs/controlNumber"
+				},
+				"maximum": {
+					"$ref": "#/$defs/controlNumber"
+				},
+				"step": {
+					"$ref": "#/$defs/controlNumber"
+				},
+				"default": {
+					"$ref": "#/$defs/controlNumber"
+				},
+				"unit": {
+					"$ref": "#/$defs/controlValueUnit"
+				},
+				"string": {
+					"$ref": "#/$defs/localizedDescription"
+				}
+			},
+			"required": [
+				"minimum",
+				"maximum",
+				"step",
+				"default",
+				"unit"
+			]
+		},
+		"selectorValueStatic": {
+			"type": "object",
+			"properties": {
+				"default": {
+					"anyOf": [
+						{
+							"$ref": "#/$defs/controlNumber"
+						},
+						{
+							"$ref": "#/$defs/localizedDescription"
+						}
+					]
+				},
+				"unit": {
+					"$ref": "#/$defs/controlValueUnit"
+				},
+				"options": {
+					"type": "array",
+					"items": {
+						"anyOf": [
+							{
+								"$ref": "#/$defs/controlNumber"
+							},
+							{
+								"$ref": "#/$defs/localizedDescription"
+							}
+						]
+					}
+				}
+			},
+			"required": [
+				"default",
+				"unit",
+				"options"
+			]
+		},
+		"controlValuesStatic": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/controlValueTypeType"
+				}
+			},
+			"required": [
+				"type",
+				"values"
+			],
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"pattern": "^CONTROL_LINEAR_"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"type": "array",
+								"items": {
+									"$ref": "#/$defs/linearValueStatic"
+								}
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"pattern": "^CONTROL_SELECTOR_"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"$ref": "#/$defs/selectorValueStatic"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"pattern": "^CONTROL_ARRAY_"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"$ref": "#/$defs/linearValueStatic"
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"const": "CONTROL_UTF8"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"type": "null"
+							}
+						}
+					}
+				}
+			]
+		},
 		"controlDescriptorStaticModel": {
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"block_latency": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"control_latency": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"control_domain": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"control_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"reset_time": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint32"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
 				},
 				"signal_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorType"
 				},
 				"signal_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"signal_output": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"control_value_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/controlValueType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/controlValueType"
 				},
 				"number_of_values": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"values": {
 					"oneOf": [
 						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/controlValueUnit"
-							}
+							"$ref": "#/$defs/controlValuesStatic"
 						},
 						{
 							"type": "null"
@@ -995,17 +1028,104 @@
 				"signal_type",
 				"signal_index",
 				"signal_output",
-				"control_value_type"
+				"control_value_type",
+				"values"
+			]
+		},
+		"clockDomainDescriptor": {
+			"type": "object",
+			"properties": {
+				"_index (informative)": {
+					"$ref": "#/$defs/descriptorIndex"
+				},
+				"static": {
+					"$ref": "#/$defs/clockDomainDescriptorStaticModel"
+				}
+			},
+			"required": [
+				"static"
+			]
+		},
+		"clockDomainDescriptorStaticModel": {
+			"type": "object",
+			"properties": {
+				"localized_description": {
+					"$ref": "#/$defs/localizedDescription"
+				},
+				"clock_sources": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/descriptorIndex"
+					}
+				},
+				"default_media_clock_priority": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				}
+			},
+			"required": [
+				"clock_sources"
+			]
+		},
+		"timingDescriptor": {
+			"type": "object",
+			"properties": {
+				"_index (informative)": {
+					"$ref": "#/$defs/descriptorIndex"
+				},
+				"static": {
+					"$ref": "#/$defs/timingDescriptorStaticModel"
+				}
+			},
+			"required": [
+				"static"
+			]
+		},
+		"timingDescriptorStaticModel": {
+			"type": "object",
+			"properties": {
+				"localized_description": {
+					"$ref": "#/$defs/localizedDescription"
+				},
+				"algorithm": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/timingAlgorithm"
+				},
+				"ptp_instances": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/descriptorIndex"
+					}
+				}
+			},
+			"required": [
+				"localized_description",
+				"algorithm",
+				"ptp_instances"
 			]
 		},
 		"ptpInstanceDescriptor": {
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/ptpInstanceDescriptorStaticModel"
+					"$ref": "#/$defs/ptpInstanceDescriptorStaticModel"
+				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptors"
+				},
+				"ptp_port_descriptors": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "#/$defs/ptpPortDescriptor"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
 				}
 			},
 			"required": [
@@ -1016,36 +1136,19 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"clock_identity": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uniqueIdentifier"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
 				},
 				"flags": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/ptpInstanceFlag"
-							}
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/ptpInstanceFlags"
 				},
 				"control_counts": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"ptp_port_counts": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				}
 			},
 			"required": [
@@ -1060,10 +1163,10 @@
 			"type": "object",
 			"properties": {
 				"_index (informative)": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"static": {
-					"$ref": "#/$aemFormat/ptpPortDescriptorStaticModel"
+					"$ref": "#/$defs/ptpPortDescriptorStaticModel"
 				}
 			},
 			"required": [
@@ -1074,39 +1177,22 @@
 			"type": "object",
 			"properties": {
 				"localized_description": {
-					"oneOf": [
-						{
-							"$ref": "../../common/2025.03.11/schema.json#/$defs/localizedDescription"
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "#/$defs/localizedDescription"
 				},
 				"port_number": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/uint16"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
 				},
 				"port_type": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/ptpPortType"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/ptpPortType"
 				},
 				"flags": {
-					"oneOf": [
-						{
-							"type": "array",
-							"items": {
-								"$ref": "../../common/2025.03.11/schema.json#/$defs/portFlag"
-							}
-						},
-						{
-							"type": "null"
-						}
-					]
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/ptpPortFlags"
 				},
 				"avb_interface_index": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/descriptorIndex"
+					"$ref": "#/$defs/descriptorIndex"
 				},
 				"profile_identifier": {
-					"$ref": "../../common/2025.03.11/schema.json#/$defs/macAddress"
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/macAddress"
 				}
 			},
 			"required": [
@@ -1120,11 +1206,14 @@
 		}
 	},
 	"properties": {
+		"$schema": {
+			"type": "string"
+		},
 		"not_compliant": {
 			"type": "boolean"
 		},
 		"entity_descriptor": {
-			"$ref": "#/$aemFormat/entityDescriptor"
+			"$ref": "#/$defs/entityDescriptor"
 		},
 		"aem_format_version": {
 			"type": "integer",

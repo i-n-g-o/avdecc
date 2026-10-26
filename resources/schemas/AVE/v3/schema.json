@@ -1,0 +1,1259 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "AVE Files Schema",
+	"description": "JSON validation schema for ATDECC Virtual Entity files (also used for Entity Model files). Each section is only present if it was dumped (and loading a file requires the sections matching the requested flags). The static part of the entity model is validated by the AEM schema, its dynamic part by this schema.",
+	"type": "object",
+	"schema_version": "2026.10.23",
+	"$defs": {
+		"commonInformation": {
+			"type": "object",
+			"properties": {
+				"entity_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"entity_model_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"entity_capabilities": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/entityCapabilities"
+				},
+				"talker_stream_sources": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
+				},
+				"talker_capabilities": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/talkerCapabilities"
+				},
+				"listener_stream_sinks": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
+				},
+				"listener_capabilities": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/listenerCapabilities"
+				},
+				"controller_capabilities": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/controllerCapabilities"
+				},
+				"identify_control_index": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"association_id": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"entity_id",
+				"entity_model_id",
+				"entity_capabilities"
+			]
+		},
+		"interfaceInformation": {
+			"type": "object",
+			"properties": {
+				"avb_interface_index": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+						},
+						{
+							"type": "null",
+							"description": "The entity doesn't have an AVB_INTERFACE descriptor (global information)"
+						}
+					]
+				},
+				"mac_address": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/macAddress"
+				},
+				"valid_time": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"available_index": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
+				},
+				"gptp_grandmaster_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"gptp_domain_number": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				}
+			},
+			"required": [
+				"avb_interface_index",
+				"mac_address",
+				"valid_time"
+			]
+		},
+		"adpInformation": {
+			"type": "object",
+			"properties": {
+				"common": {
+					"$ref": "#/$defs/commonInformation"
+				},
+				"interfaces": {
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/interfaceInformation"
+					}
+				}
+			},
+			"required": [
+				"common",
+				"interfaces"
+			]
+		},
+		"compatibilityEvent": {
+			"type": "object",
+			"properties": {
+				"previous_flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/compatibilityFlags"
+				},
+				"new_flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/compatibilityFlags"
+				},
+				"previous_milan_version": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/milanVersion"
+				},
+				"new_milan_version": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/milanVersion"
+				},
+				"spec_clause": {
+					"type": "string"
+				},
+				"message": {
+					"type": "string"
+				},
+				"timestamp": {
+					"type": "integer",
+					"description": "Time of the event, in milliseconds since epoch"
+				}
+			},
+			"required": [
+				"previous_flags",
+				"new_flags",
+				"previous_milan_version",
+				"new_milan_version",
+				"spec_clause",
+				"message",
+				"timestamp"
+			]
+		},
+		"milanInformation": {
+			"type": "object",
+			"properties": {
+				"protocol_version": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
+				},
+				"flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/milanInfoFeaturesFlags"
+				},
+				"certification_version": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/milanVersion"
+				},
+				"specification_version": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/milanVersion"
+				}
+			},
+			"required": [
+				"protocol_version",
+				"flags",
+				"certification_version"
+			]
+		},
+		"milanDynamicState": {
+			"type": "object",
+			"properties": {
+				"system_unique_id": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"system_name": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/avdeccString"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			}
+		},
+		"state": {
+			"type": "object",
+			"properties": {
+				"acquire_state": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/acquireState"
+				},
+				"owning_controller_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"lock_state": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/lockState"
+				},
+				"locking_controller_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"subscribed_unsol": {
+					"type": "boolean"
+				},
+				"unsol_supported": {
+					"type": "boolean"
+				},
+				"active_configuration": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+				}
+			},
+			"required": [
+				"active_configuration"
+			]
+		},
+		"interfaceStatistics": {
+			"type": "object",
+			"properties": {
+				"aecp_retry_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"aecp_timeout_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"aecp_unexpected_response_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"aecp_response_average_time": {
+					"type": "number",
+					"minimum": 0,
+					"description": "Average response time, in milliseconds (with a fractional part for the sub-millisecond resolution)"
+				},
+				"aem_aecp_unsolicited_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"aem_aecp_unsolicited_loss_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"mvu_aecp_unsolicited_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				},
+				"mvu_aecp_unsolicited_loss_counter": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				}
+			}
+		},
+		"statistics": {
+			"type": "object",
+			"properties": {
+				"primary": {
+					"$ref": "#/$defs/interfaceStatistics"
+				},
+				"secondary": {
+					"$ref": "#/$defs/interfaceStatistics"
+				},
+				"enumeration_time": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64",
+					"description": "Enumeration time, in milliseconds"
+				}
+			}
+		},
+		"diagnostics": {
+			"type": "object",
+			"properties": {
+				"redundancy_warning": {
+					"type": "boolean"
+				},
+				"stream_input_latency_errors": {
+					"type": "array",
+					"items": {
+						"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+					},
+					"description": "Indexes of the Stream Inputs having a latency error"
+				}
+			}
+		},
+		"descriptorIndex": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/descriptorIndex"
+		},
+		"localizedDescription": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/localizedDescriptionOrNull"
+		},
+		"avdeccString": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/avdeccString"
+		},
+		"controlNumber": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/controlNumber"
+		},
+		"entityModelDynamic": {
+			"type": "object",
+			"properties": {
+				"entity_descriptor": {
+					"type": "object",
+					"properties": {
+						"dynamic": {
+							"$ref": "#/$defs/entityDescriptorDynamicModel"
+						},
+						"configuration_descriptors": {
+							"oneOf": [
+								{
+									"type": "array",
+									"items": {
+										"$ref": "#/$defs/configurationDescriptorDynamic"
+									}
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					}
+				}
+			},
+			"description": "Dynamic model of the entity model tree (the static model being validated by the AEM schema)"
+		},
+		"configurationDescriptorDynamic": {
+			"type": "object",
+			"properties": {
+				"dynamic": {
+					"$ref": "#/$defs/objectNameDynamicModel"
+				},
+				"audio_unit_descriptors": {
+					"$ref": "#/$defs/audioUnitDescriptorsDynamic"
+				},
+				"stream_input_descriptors": {
+					"$ref": "#/$defs/streamInputDescriptorsDynamic"
+				},
+				"stream_output_descriptors": {
+					"$ref": "#/$defs/streamOutputDescriptorsDynamic"
+				},
+				"jack_input_descriptors": {
+					"$ref": "#/$defs/jackDescriptorsDynamic"
+				},
+				"jack_output_descriptors": {
+					"$ref": "#/$defs/jackDescriptorsDynamic"
+				},
+				"avb_interface_descriptors": {
+					"$ref": "#/$defs/avbInterfaceDescriptorsDynamic"
+				},
+				"clock_source_descriptors": {
+					"$ref": "#/$defs/clockSourceDescriptorsDynamic"
+				},
+				"memory_object_descriptors": {
+					"$ref": "#/$defs/memoryObjectDescriptorsDynamic"
+				},
+				"control_descriptors": {
+					"$ref": "#/$defs/controlDescriptorsDynamic"
+				},
+				"clock_domain_descriptors": {
+					"$ref": "#/$defs/clockDomainDescriptorsDynamic"
+				},
+				"timing_descriptors": {
+					"$ref": "#/$defs/objectNameDescriptorsDynamic"
+				},
+				"ptp_instance_descriptors": {
+					"$ref": "#/$defs/ptpInstanceDescriptorsDynamic"
+				}
+			}
+		},
+		"audioUnitDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/audioUnitDescriptorDynamicModel"
+							},
+							"control_descriptors": {
+								"$ref": "#/$defs/controlDescriptorsDynamic"
+							},
+							"stream_port_input_descriptors": {
+								"$ref": "#/$defs/streamPortDescriptorsDynamic"
+							},
+							"stream_port_output_descriptors": {
+								"$ref": "#/$defs/streamPortDescriptorsDynamic"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"streamPortDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/streamPortDescriptorDynamicModel"
+							},
+							"audio_cluster_descriptors": {
+								"$ref": "#/$defs/objectNameDescriptorsDynamic"
+							},
+							"control_descriptors": {
+								"$ref": "#/$defs/controlDescriptorsDynamic"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"streamInputDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/streamInputDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"streamOutputDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/streamOutputDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"jackDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/objectNameDynamicModel"
+							},
+							"control_descriptors": {
+								"$ref": "#/$defs/controlDescriptorsDynamic"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"avbInterfaceDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/avbInterfaceDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"clockSourceDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/clockSourceDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"memoryObjectDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/memoryObjectDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"controlDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/controlDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"clockDomainDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/clockDomainDescriptorDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"ptpInstanceDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/objectNameDynamicModel"
+							},
+							"control_descriptors": {
+								"$ref": "#/$defs/controlDescriptorsDynamic"
+							},
+							"ptp_port_descriptors": {
+								"$ref": "#/$defs/objectNameDescriptorsDynamic"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"objectNameDescriptorsDynamic": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"type": "object",
+						"properties": {
+							"dynamic": {
+								"$ref": "#/$defs/objectNameDynamicModel"
+							}
+						}
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"entityDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"entity_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"group_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"firmware_version": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"serial_number": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"current_configuration": {
+					"$ref": "#/$defs/descriptorIndex"
+				},
+				"counters": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/entityCounters"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"entity_name",
+				"group_name",
+				"firmware_version",
+				"serial_number",
+				"current_configuration"
+			]
+		},
+		"objectNameDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				}
+			}
+		},
+		"audioUnitDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"current_sampling_rate": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/samplingRate"
+				}
+			},
+			"required": [
+				"current_sampling_rate"
+			]
+		},
+		"streamPortDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"dynamic_mappings": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "../../common/2026.10.23/schema.json#/$defs/audioMapping"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			}
+		},
+		"streamDynamicInfo": {
+			"type": "object",
+			"properties": {
+				"is_class_b": {
+					"type": "boolean"
+				},
+				"has_saved_state": {
+					"type": "boolean"
+				},
+				"does_support_encrypted": {
+					"type": "boolean"
+				},
+				"are_pdus_encrypted": {
+					"type": "boolean"
+				},
+				"has_srp_registration_failed": {
+					"type": "boolean"
+				},
+				"has_talker_failed": {
+					"type": "boolean",
+					"description": "Legacy name of has_srp_registration_failed"
+				},
+				"last_received_flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamInfoFlags"
+				},
+				"stream_id": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"msrp_accumulated_latency": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"stream_dest_mac": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/macAddress"
+				},
+				"msrp_failure_code": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/msrpFailureCode"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"msrp_failure_bridge_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"stream_vlan_id": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"flags_ex": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamInfoFlagsEx"
+				},
+				"probing_status": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/probingStatus"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"acmp_status": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/acmpStatus"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"is_class_b",
+				"has_saved_state",
+				"does_support_encrypted",
+				"are_pdus_encrypted"
+			],
+			"anyOf": [
+				{
+					"required": [
+						"has_srp_registration_failed"
+					]
+				},
+				{
+					"required": [
+						"has_talker_failed"
+					]
+				}
+			]
+		},
+		"streamInputDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"stream_format": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamFormat"
+				},
+				"stream_running": {
+					"oneOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"stream_dynamic_info": {
+					"oneOf": [
+						{
+							"$ref": "#/$defs/streamDynamicInfo"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"connected_talker": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamIdentification"
+				},
+				"connection_state": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamInputConnectionState"
+				},
+				"counters": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/streamInputCounters"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"stream_format"
+			]
+		},
+		"streamOutputDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"stream_format": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/streamFormat"
+				},
+				"stream_running": {
+					"oneOf": [
+						{
+							"type": "boolean"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"stream_dynamic_info": {
+					"oneOf": [
+						{
+							"$ref": "#/$defs/streamDynamicInfo"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"presentation_time_offset": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/int64",
+					"description": "Presentation time offset, in nanoseconds"
+				},
+				"counters": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/streamOutputCounters"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"stream_format"
+			]
+		},
+		"avbInterfaceInfo": {
+			"type": "object",
+			"properties": {
+				"propagation_delay": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint32"
+				},
+				"flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/avbInfoFlags"
+				},
+				"msrp_mappings": {
+					"type": "array",
+					"items": {
+						"$ref": "../../common/2026.10.23/schema.json#/$defs/msrpMapping"
+					}
+				}
+			},
+			"required": [
+				"propagation_delay",
+				"flags",
+				"msrp_mappings"
+			]
+		},
+		"avbInterfaceDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"mac_address": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/macAddress"
+				},
+				"clock_identity": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"priority1": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"clock_class": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"offset_scaled_log_variance": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint16"
+				},
+				"clock_accuracy": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"priority2": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"domain_number": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"log_sync_interval": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"log_announce_interval": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"log_pdelay_interval": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"gptp_grandmaster_id": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				},
+				"gptp_domain_number": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+				},
+				"avb_interface_info": {
+					"oneOf": [
+						{
+							"$ref": "#/$defs/avbInterfaceInfo"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"as_path": {
+					"oneOf": [
+						{
+							"type": "array",
+							"items": {
+								"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+							}
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"counters": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/avbInterfaceCounters"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"mac_address",
+				"clock_identity",
+				"priority1",
+				"clock_class",
+				"offset_scaled_log_variance",
+				"clock_accuracy",
+				"priority2",
+				"domain_number",
+				"log_sync_interval",
+				"log_announce_interval",
+				"log_pdelay_interval",
+				"gptp_grandmaster_id",
+				"gptp_domain_number"
+			]
+		},
+		"clockSourceDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"clock_source_flags": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/clockSourceFlags"
+				},
+				"clock_source_identifier": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+				}
+			}
+		},
+		"memoryObjectDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"length": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/uint64"
+				}
+			},
+			"required": [
+				"length"
+			]
+		},
+		"controlValuesDynamic": {
+			"type": "object",
+			"properties": {
+				"type": {
+					"$ref": "../../common/2026.10.23/schema.json#/$defs/controlValueTypeType"
+				}
+			},
+			"required": [
+				"type",
+				"values"
+			],
+			"allOf": [
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"pattern": "^CONTROL_(LINEAR|ARRAY)_"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"type": "array",
+								"items": {
+									"$ref": "#/$defs/controlNumber"
+								}
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"pattern": "^CONTROL_SELECTOR_"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"anyOf": [
+									{
+										"$ref": "#/$defs/controlNumber"
+									},
+									{
+										"$ref": "#/$defs/localizedDescription"
+									}
+								]
+							}
+						}
+					}
+				},
+				{
+					"if": {
+						"properties": {
+							"type": {
+								"const": "CONTROL_UTF8"
+							}
+						}
+					},
+					"then": {
+						"properties": {
+							"values": {
+								"type": "array",
+								"items": {
+									"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+								}
+							}
+						}
+					}
+				}
+			]
+		},
+		"controlDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"values": {
+					"oneOf": [
+						{
+							"$ref": "#/$defs/controlValuesDynamic"
+						},
+						{
+							"type": "null"
+						}
+					]
+				}
+			},
+			"required": [
+				"values"
+			]
+		},
+		"clockDomainDescriptorDynamicModel": {
+			"type": "object",
+			"properties": {
+				"object_name": {
+					"$ref": "#/$defs/avdeccString"
+				},
+				"clock_source_index": {
+					"$ref": "#/$defs/descriptorIndex"
+				},
+				"counters": {
+					"oneOf": [
+						{
+							"$ref": "../../common/2026.10.23/schema.json#/$defs/clockDomainCounters"
+						},
+						{
+							"type": "null"
+						}
+					]
+				},
+				"media_clock_reference_info": {
+					"type": "object",
+					"properties": {
+						"user_media_clock_priority": {
+							"oneOf": [
+								{
+									"$ref": "../../common/2026.10.23/schema.json#/$defs/uint8"
+								},
+								{
+									"type": "null"
+								}
+							]
+						},
+						"media_clock_domain_name": {
+							"oneOf": [
+								{
+									"$ref": "#/$defs/avdeccString"
+								},
+								{
+									"type": "null"
+								}
+							]
+						}
+					}
+				}
+			},
+			"required": [
+				"clock_source_index"
+			]
+		}
+	},
+	"properties": {
+		"$schema": {
+			"type": "string"
+		},
+		"_dump_source (informative)": {
+			"type": "string",
+			"description": "Name and Version of the tool used to generate the dump."
+		},
+		"dump_version": {
+			"type": "integer",
+			"minimum": 3,
+			"maximum": 3
+		},
+		"adp_information": {
+			"$ref": "#/$defs/adpInformation"
+		},
+		"compatibility_flags": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/compatibilityFlags"
+		},
+		"milan_compatibility_version": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/milanVersion"
+		},
+		"compatibility_events": {
+			"oneOf": [
+				{
+					"type": "array",
+					"items": {
+						"$ref": "#/$defs/compatibilityEvent"
+					}
+				},
+				{
+					"type": "null"
+				}
+			]
+		},
+		"entity_model": {
+			"allOf": [
+				{
+					"$ref": "../../AEM/v2/schema.json"
+				},
+				{
+					"$ref": "#/$defs/entityModelDynamic"
+				}
+			]
+		},
+		"entity_model_id": {
+			"$ref": "../../common/2026.10.23/schema.json#/$defs/uniqueIdentifier"
+		},
+		"milan_information": {
+			"$ref": "#/$defs/milanInformation"
+		},
+		"milan_dynamic_state": {
+			"$ref": "#/$defs/milanDynamicState"
+		},
+		"state": {
+			"$ref": "#/$defs/state"
+		},
+		"statistics": {
+			"$ref": "#/$defs/statistics"
+		},
+		"diagnostics": {
+			"$ref": "#/$defs/diagnostics"
+		}
+	},
+	"required": [
+		"dump_version"
+	]
+}

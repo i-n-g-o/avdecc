@@ -89,6 +89,56 @@ namespace
 			throw Controller::Exception(Controller::Error::InternalError, e.what());
 	}
 }
+
+#ifdef ENABLE_AVDECC_FEATURE_JSON
+// Helper writing a JSON object to disk.
+std::tuple<avdecc::jsonSerializer::SerializationError, std::string> writeJsonObjectToFile(json const& object, std::string const& filePath, entity::model::jsonSerializer::Flags const flags) noexcept
+{
+	auto const isBinaryFormat = flags.test(entity::model::jsonSerializer::Flag::BinaryFormat);
+
+	// Dump the JSON object before opening the output file, so it's not altered in case of error
+	auto binary = std::vector<std::uint8_t>{};
+	auto text = std::string{};
+	try
+	{
+		if (isBinaryFormat)
+		{
+			binary = json::to_msgpack(object);
+		}
+		else
+		{
+			text = object.dump(4);
+		}
+	}
+	catch (json::exception const& e)
+	{
+		// Values are serialized so that they can always be dumped, but a JSON object can still contain invalid data (like a non UTF-8 string)
+		return { avdecc::jsonSerializer::SerializationError::InternalError, e.what() };
+	}
+
+	// Try to open the output file
+	auto const mode = std::ios::binary | std::ios::out;
+	auto ofs = std::ofstream{ utils::filePathFromUTF8String(filePath), mode }; // We always want to read as 'binary', we don't want the cr/lf shit to alter the size of our allocated buffer (all modern code should handle both lf and cr/lf)
+
+	// Failed to open file to writting
+	if (!ofs.is_open())
+	{
+		return { avdecc::jsonSerializer::SerializationError::AccessDenied, std::strerror(errno) };
+	}
+
+	// Everything is fine, write the JSON object to disk
+	if (isBinaryFormat)
+	{
+		ofs.write(reinterpret_cast<char const*>(binary.data()), binary.size() * sizeof(decltype(binary)::value_type));
+	}
+	else
+	{
+		ofs << text << std::endl;
+	}
+
+	return { avdecc::jsonSerializer::SerializationError::NoError, "" };
+}
+#endif // ENABLE_AVDECC_FEATURE_JSON
 } // namespace
 
 ControllerImpl::ControllerImpl(std::vector<Controller::InterfaceConfiguration> const& interfaceConfigurations, std::uint16_t const progID, UniqueIdentifier const entityModelID, std::string const& preferedLocale, entity::model::EntityTree const* const entityModelTree, entity::controller::Interface const* const virtualEntityInterface)
@@ -3429,6 +3479,7 @@ std::tuple<avdecc::jsonSerializer::SerializationError, std::string> ControllerIm
 
 	// Dump information of the dump itself
 	object[jsonSerializer::keyName::Controller_DumpVersion] = jsonSerializer::keyValue::Controller_DumpVersion;
+	object[jsonSerializer::keyName::Controller_Schema] = std::string{ jsonSerializer::keyValue::Controller_SchemaBaseURL } + "v" + std::to_string(jsonSerializer::keyValue::Controller_DumpVersion) + "/schema.json";
 	object[jsonSerializer::keyName::Controller_Informative_DumpSource] = dumpSource;
 
 	// Lock to protect _controlledEntities
@@ -3471,25 +3522,11 @@ std::tuple<avdecc::jsonSerializer::SerializationError, std::string> ControllerIm
 		}
 	}
 
-	// Try to open the output file
-	auto const mode = std::ios::binary | std::ios::out;
-	auto ofs = std::ofstream{ utils::filePathFromUTF8String(filePath), mode }; // We always want to read as 'binary', we don't want the cr/lf shit to alter the size of our allocated buffer (all modern code should handle both lf and cr/lf)
-
-	// Failed to open file to writting
-	if (!ofs.is_open())
+	// Write the JSON object to disk
+	auto const [writeError, writeErrorText] = writeJsonObjectToFile(object, filePath, flags);
+	if (!!writeError)
 	{
-		return { avdecc::jsonSerializer::SerializationError::AccessDenied, std::strerror(errno) };
-	}
-
-	// Everything is fine, write the JSON object to disk
-	if (flags.test(entity::model::jsonSerializer::Flag::BinaryFormat))
-	{
-		auto const binary = json::to_msgpack(object);
-		ofs.write(reinterpret_cast<char const*>(binary.data()), binary.size() * sizeof(decltype(binary)::value_type));
-	}
-	else
-	{
-		ofs << std::setw(4) << object << std::endl;
+		return { writeError, writeErrorText };
 	}
 
 	return { error, errorText };
@@ -3519,28 +3556,8 @@ std::tuple<avdecc::jsonSerializer::SerializationError, std::string> ControllerIm
 		// Add informative metadata to the object before serialization
 		object[jsonSerializer::keyName::Controller_Informative_DumpSource] = dumpSource;
 
-		// Try to open the output file
-		auto const mode = std::ios::binary | std::ios::out;
-		auto ofs = std::ofstream{ utils::filePathFromUTF8String(filePath), mode }; // We always want to read as 'binary', we don't want the cr/lf shit to alter the size of our allocated buffer (all modern code should handle both lf and cr/lf)
-
-		// Failed to open file to writting
-		if (!ofs.is_open())
-		{
-			return { avdecc::jsonSerializer::SerializationError::AccessDenied, std::strerror(errno) };
-		}
-
-		// Everything is fine, write the JSON object to disk
-		if (flags.test(entity::model::jsonSerializer::Flag::BinaryFormat))
-		{
-			auto const binary = json::to_msgpack(object);
-			ofs.write(reinterpret_cast<char const*>(binary.data()), binary.size() * sizeof(decltype(binary)::value_type));
-		}
-		else
-		{
-			ofs << std::setw(4) << object << std::endl;
-		}
-
-		return { avdecc::jsonSerializer::SerializationError::NoError, "" };
+		// Write the JSON object to disk
+		return writeJsonObjectToFile(object, filePath, flags);
 	}
 	catch (avdecc::jsonSerializer::SerializationException const& e)
 	{

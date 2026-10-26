@@ -1,0 +1,41 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"title": "ANS Files Schema",
+	"description": "JSON validation schema for ATDECC Network State files (dump of all the entities known by a controller)",
+	"type": "object",
+	"schema_version": "2026.10.23",
+	"properties": {
+		"$schema": {
+			"type": "string"
+		},
+		"_dump_source (informative)": {
+			"type": "string",
+			"description": "Name and Version of the tool used to generate the dump."
+		},
+		"dump_version": {
+			"type": "integer",
+			"minimum": 1,
+			"maximum": 1
+		},
+		"entities": {
+			"type": "array",
+			"items": {
+				"anyOf": [
+					{
+						"$ref": "../../AVE/v3/schema.json"
+					},
+					{
+						"$ref": "../../AVE/v2/schema.json"
+					},
+					{
+						"$ref": "../../AVE/v1/schema.json"
+					}
+				]
+			}
+		}
+	},
+	"required": [
+		"dump_version",
+		"entities"
+	]
+}

@@ -27,6 +27,7 @@
 #pragma once
 
 #include "la/avdecc/utils.hpp"
+#include "la/avdecc/internals/jsonTypes.hpp"
 #include "la/avdecc/controller/avdeccController.hpp"
 #include "la/avdecc/controller/internals/avdeccControlledEntity.hpp"
 
@@ -43,26 +44,14 @@ namespace controller
 namespace model
 {
 /* AcquireState conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AcquireState, {
-																						 { AcquireState::Undefined, "UNKNOWN" },
-																						 { AcquireState::NotSupported, "NOT_SUPPORTED" },
-																						 { AcquireState::NotAcquired, "NOT_ACQUIRED" },
-																						 { AcquireState::AcquireInProgress, "ACQUIRE_IN_PROGRESS" },
-																						 { AcquireState::Acquired, "ACQUIRED" },
-																						 { AcquireState::AcquiredByOther, "ACQUIRED_BY_OTHER" },
-																						 { AcquireState::ReleaseInProgress, "RELEASE_IN_PROGRESS" },
-																					 });
+AVDECC_JSON_SERIALIZE_ENUM(AcquireState, {
+																					 { AcquireState::Undefined, "UNKNOWN" }, { AcquireState::NotSupported, "NOT_SUPPORTED" }, { AcquireState::NotAcquired, "NOT_ACQUIRED" }, { AcquireState::AcquireInProgress, "ACQUIRE_IN_PROGRESS" }, { AcquireState::Acquired, "ACQUIRED" }, { AcquireState::AcquiredByOther, "ACQUIRED_BY_OTHER" }, { AcquireState::ReleaseInProgress, "RELEASE_IN_PROGRESS" }, { AcquireState::AcquireInProgress, "TRY_ACQUIRE" }, // Legacy name, for compatibility with older files
+																				 });
 
 /* LockState conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(LockState, {
-																					{ LockState::Undefined, "UNKNOWN" },
-																					{ LockState::NotSupported, "NOT_SUPPORTED" },
-																					{ LockState::NotLocked, "NOT_LOCKED" },
-																					{ LockState::LockInProgress, "LOCK_IN_PROGRESS" },
-																					{ LockState::Locked, "LOCKED" },
-																					{ LockState::LockedByOther, "LOCKED_BY_OTHER" },
-																					{ LockState::UnlockInProgress, "UNLOCK_IN_PROGRESS" },
-																				});
+AVDECC_JSON_SERIALIZE_ENUM(LockState, {
+																				{ LockState::Undefined, "UNKNOWN" }, { LockState::NotSupported, "NOT_SUPPORTED" }, { LockState::NotLocked, "NOT_LOCKED" }, { LockState::LockInProgress, "LOCK_IN_PROGRESS" }, { LockState::Locked, "LOCKED" }, { LockState::LockedByOther, "LOCKED_BY_OTHER" }, { LockState::UnlockInProgress, "UNLOCK_IN_PROGRESS" }, { LockState::LockInProgress, "TRY_LOCK" }, // Legacy name, for compatibility with older files
+																			});
 
 } // namespace model
 
@@ -106,14 +95,13 @@ constexpr auto ControlledEntityCompatibilityChangedEvent_Timestamp = "timestamp"
 } // namespace keyName
 
 /* ControlledEntity::CompatibilityFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ControlledEntity::CompatibilityFlag, {
-																																		{ ControlledEntity::CompatibilityFlag::None, "UNKNOWN" },
-																																		{ ControlledEntity::CompatibilityFlag::IEEE17221, "IEEE17221" },
-																																		{ ControlledEntity::CompatibilityFlag::Milan, "MILAN" },
-																																		{ ControlledEntity::CompatibilityFlag::IEEE17221Warning, "IEEE17221WARNING" },
-																																		{ ControlledEntity::CompatibilityFlag::MilanWarning, "MILANWARNING" },
-																																		{ ControlledEntity::CompatibilityFlag::Misbehaving, "MISBEHAVING" },
-																																	});
+AVDECC_JSON_SERIALIZE_ENUM(ControlledEntity::CompatibilityFlag, {
+																																	{ ControlledEntity::CompatibilityFlag::IEEE17221, "IEEE17221" },
+																																	{ ControlledEntity::CompatibilityFlag::Milan, "MILAN" },
+																																	{ ControlledEntity::CompatibilityFlag::IEEE17221Warning, "IEEE17221WARNING" },
+																																	{ ControlledEntity::CompatibilityFlag::MilanWarning, "MILANWARNING" },
+																																	{ ControlledEntity::CompatibilityFlag::Misbehaving, "MISBEHAVING" },
+																																});
 
 /* CompatibilityChangedEvent conversion */
 inline void to_json(json& j, ControlledEntity::CompatibilityChangedEvent const& event)
@@ -154,6 +142,7 @@ namespace keyName
 {
 /* Controller nodes */
 constexpr auto Controller_DumpVersion = "dump_version";
+constexpr auto Controller_Schema = "$schema";
 constexpr auto Controller_Entities = "entities";
 constexpr auto Controller_Informative_DumpSource = "_dump_source (informative)";
 
@@ -178,6 +167,7 @@ namespace keyValue
 {
 /* Controller nodes */
 constexpr auto Controller_DumpVersion = std::uint32_t{ 1 };
+constexpr auto Controller_SchemaBaseURL = "https://raw.githubusercontent.com/L-Acoustics/avdecc/refs/heads/main/resources/schemas/ANS/";
 
 /* ControlledEntity nodes */
 constexpr auto ControlledEntity_DumpVersion = std::uint32_t{ 3 };

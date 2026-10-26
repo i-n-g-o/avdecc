@@ -41,6 +41,10 @@
 #include <unordered_map>
 #include <stdexcept> // invalid_argument
 #include <limits> // quiet_NaN // infinity
+#include <charconv> // from_chars
+#include <utility> // pair
+#include <string>
+#include <cstddef> // size_t
 
 using json = nlohmann::json;
 
@@ -57,8 +61,134 @@ inline void logJsonSerializer(Level const level, std::string const& message)
 }
 
 } // namespace logger
+
+namespace jsonSerializer
+{
+namespace detail
+{
+/** Parses the hexadecimal representation of an unsigned value (as written by utils::toHexString), returns std::nullopt if the string is not a valid representation or if the value doesn't fit in ValueType */
+template<typename ValueType>
+std::optional<ValueType> parseHexValue(std::string const& str) noexcept
+{
+	static_assert(std::is_unsigned_v<ValueType>, "parseHexValue requires an unsigned type");
+
+	if (str.size() < 3 || str[0] != '0' || (str[1] != 'x' && str[1] != 'X'))
+	{
+		return std::nullopt;
+	}
+
+	auto value = ValueType{};
+	auto const* const begin = str.data() + 2;
+	auto const* const end = str.data() + str.size();
+	auto const [ptr, ec] = std::from_chars(begin, end, value, 16);
+	if (ec != std::errc{} || ptr != end)
+	{
+		return std::nullopt;
+	}
+	return value;
+}
+
+/** Serializes an enum value using the name defined in the mapping table, or using the hexadecimal representation of its underlying value if it's not defined (so no information is lost) */
+template<typename EnumType, std::size_t N>
+void enumToJson(json& j, EnumType const value, std::pair<EnumType, char const*> const (&mapping)[N])
+{
+	for (auto const& [mappedValue, name] : mapping)
+	{
+		if (mappedValue == value)
+		{
+			j = name;
+			return;
+		}
+	}
+
+	auto const hexValue = utils::toHexString(utils::to_integral(value), true, true);
+	logger::logJsonSerializer(logger::Level::Warn, std::string("Unknown Enum value: ") + hexValue);
+	j = hexValue;
+}
+
+/** Deserializes an enum value from a name defined in the mapping table, or from the hexadecimal representation of its underlying value. A number is also accepted (for enums that were previously serialized without a mapping table). Throws json::type_error if the value cannot be converted. */
+template<typename EnumType, std::size_t N>
+void enumFromJson(json const& j, EnumType& value, std::pair<EnumType, char const*> const (&mapping)[N])
+{
+	using UnderlyingType = std::underlying_type_t<EnumType>;
+
+	auto rawValue = std::optional<std::uint64_t>{};
+	if (j.is_string())
+	{
+		auto const& str = j.get_ref<std::string const&>();
+		for (auto const& [mappedValue, name] : mapping)
+		{
+			if (str == name)
+			{
+				value = mappedValue;
+				return;
+			}
+		}
+
+		rawValue = parseHexValue<std::uint64_t>(str);
+		if (rawValue)
+		{
+			logger::logJsonSerializer(logger::Level::Warn, std::string("Unknown Enum value: ") + str);
+		}
+	}
+	else if (j.is_number_unsigned())
+	{
+		rawValue = j.get<std::uint64_t>();
+	}
+	else if (j.is_number_integer())
+	{
+		if (auto const v = j.get<std::int64_t>(); v >= 0)
+		{
+			rawValue = static_cast<std::uint64_t>(v);
+		}
+	}
+
+	if (rawValue && *rawValue <= static_cast<std::uint64_t>(std::numeric_limits<UnderlyingType>::max()))
+	{
+		value = static_cast<EnumType>(static_cast<UnderlyingType>(*rawValue));
+		return;
+	}
+
+	throw json::type_error::create(302, std::string("Unsupported Enum value: ") + j.dump(-1, ' ', false, json::error_handler_t::replace), &j);
+}
+
+/** Returns true if the string is a valid UTF-8 string (using the json library validation, so that the string can safely be dumped) */
+inline bool isValidUtf8String(std::string const& str) noexcept
+{
+	try
+	{
+		[[maybe_unused]] auto const dumped = json(str).dump();
+		return true;
+	}
+	catch (json::type_error const&)
+	{
+		return false;
+	}
+}
+
+} // namespace detail
+} // namespace jsonSerializer
 } // namespace avdecc
 } // namespace la
+
+/**
+* @brief Same as NLOHMANN_JSON_SERIALIZE_ENUM, except that a value not defined in the mapping table is not lost.
+* @details NLOHMANN_JSON_SERIALIZE_ENUM silently uses the first entry of the mapping table when a value (or a name) is not defined in it.
+*          With this macro, a value not defined in the mapping table is serialized as the hexadecimal representation of its underlying value (and deserialized back from it), and the deserialization of an unknown name throws json::type_error.
+*          A number is also accepted during deserialization, for enums that were previously serialized without a mapping table.
+*          A value can be defined more than once in the mapping table (to support legacy names), the first entry being the one used for serialization.
+*/
+#define AVDECC_JSON_SERIALIZE_ENUM(ENUM_TYPE, ...) \
+	inline void to_json(::nlohmann::json& j, ENUM_TYPE const& e) \
+	{ \
+		static std::pair<ENUM_TYPE, char const*> const s_mapping[] = __VA_ARGS__; \
+		::la::avdecc::jsonSerializer::detail::enumToJson(j, e, s_mapping); \
+	} \
+	inline void from_json(::nlohmann::json const& j, ENUM_TYPE& e) \
+	{ \
+		static std::pair<ENUM_TYPE, char const*> const s_mapping[] = __VA_ARGS__; \
+		::la::avdecc::jsonSerializer::detail::enumFromJson(j, e, s_mapping); \
+	}
 
 namespace nlohmann
 {
@@ -189,6 +319,26 @@ inline void get_optional_value(json const& j, KeyT&& key, ValueType& v)
 	}
 }
 
+/** Descriptor counters conversion (the counter valid flag type must be defined using AVDECC_JSON_SERIALIZE_ENUM, so unknown counters are not lost) */
+template<typename CountersType>
+static void writeDescriptorCounters(CountersType const& counters, json& object)
+{
+	for (auto const& [name, value] : counters)
+	{
+		json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
+		object[n.get<std::string>()] = value;
+	}
+}
+template<typename CountersType>
+static void readDescriptorCounters(json const& object, CountersType& counters)
+{
+	for (auto const& [name, value] : object.items())
+	{
+		json const n = name; // Must use operator= instead of constructor to force usage of the from_json overload
+		counters.insert(std::make_pair(n.get<typename CountersType::key_type>(), value.template get<typename CountersType::mapped_type>()));
+	}
+}
+
 /** la::avdecc::entity::model::EntityCounters converter */
 template<>
 struct adl_serializer<la::avdecc::entity::model::EntityCounters>
@@ -196,32 +346,12 @@ struct adl_serializer<la::avdecc::entity::model::EntityCounters>
 	static void to_json(json& j, la::avdecc::entity::model::EntityCounters const& counters)
 	{
 		auto object = json::object();
-
-		for (auto const& [name, value] : counters)
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			object[n.get<std::string>()] = value;
-		}
-
+		writeDescriptorCounters(counters, object);
 		j = std::move(object);
 	}
 	static void from_json(json const& j, la::avdecc::entity::model::EntityCounters& counters)
 	{
-		for (auto const& [name, value] : j.items())
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<la::avdecc::entity::model::EntityCounters::key_type>();
-			// Check if key is a valid CounterValidFlag enum
-			if (key == la::avdecc::entity::model::EntityCounters::key_type::None)
-			{
-				logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown EntityCounterValidFlag name: ") + name);
-				counters.insert(std::make_pair(static_cast<la::avdecc::entity::model::EntityCounters::key_type>(la::avdecc::utils::convertFromString<la::avdecc::entity::model::DescriptorCounterValidFlag>(name.c_str())), value.get<la::avdecc::entity::model::EntityCounters::mapped_type>()));
-			}
-			else
-			{
-				counters.insert(std::make_pair(key, value.get<la::avdecc::entity::model::EntityCounters::mapped_type>()));
-			}
-		}
+		readDescriptorCounters(j, counters);
 	}
 };
 
@@ -232,40 +362,12 @@ struct adl_serializer<la::avdecc::entity::model::AvbInterfaceCounters>
 	static void to_json(json& j, la::avdecc::entity::model::AvbInterfaceCounters const& counters)
 	{
 		auto object = json::object();
-
-		for (auto const& [name, value] : counters)
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<std::string>();
-			if (key == "UNKNOWN")
-			{
-				object[la::avdecc::utils::toHexString(la::avdecc::utils::to_integral(name), true, true)] = value;
-			}
-			else
-			{
-				object[key] = value;
-			}
-		}
-
+		writeDescriptorCounters(counters, object);
 		j = std::move(object);
 	}
 	static void from_json(json const& j, la::avdecc::entity::model::AvbInterfaceCounters& counters)
 	{
-		for (auto const& [name, value] : j.items())
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<la::avdecc::entity::model::AvbInterfaceCounters::key_type>();
-			// Check if key is a valid CounterValidFlag enum
-			if (key == la::avdecc::entity::model::AvbInterfaceCounters::key_type::None)
-			{
-				logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown AvbInterfaceCounterValidFlag name: ") + name);
-				counters.insert(std::make_pair(static_cast<la::avdecc::entity::model::AvbInterfaceCounters::key_type>(la::avdecc::utils::convertFromString<la::avdecc::entity::model::DescriptorCounterValidFlag>(name.c_str())), value.get<la::avdecc::entity::model::AvbInterfaceCounters::mapped_type>()));
-			}
-			else
-			{
-				counters.insert(std::make_pair(key, value.get<la::avdecc::entity::model::AvbInterfaceCounters::mapped_type>()));
-			}
-		}
+		readDescriptorCounters(j, counters);
 	}
 };
 
@@ -276,40 +378,12 @@ struct adl_serializer<la::avdecc::entity::model::ClockDomainCounters>
 	static void to_json(json& j, la::avdecc::entity::model::ClockDomainCounters const& counters)
 	{
 		auto object = json::object();
-
-		for (auto const& [name, value] : counters)
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<std::string>();
-			if (key == "UNKNOWN")
-			{
-				object[la::avdecc::utils::toHexString(la::avdecc::utils::to_integral(name), true, true)] = value;
-			}
-			else
-			{
-				object[key] = value;
-			}
-		}
-
+		writeDescriptorCounters(counters, object);
 		j = std::move(object);
 	}
 	static void from_json(json const& j, la::avdecc::entity::model::ClockDomainCounters& counters)
 	{
-		for (auto const& [name, value] : j.items())
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<la::avdecc::entity::model::ClockDomainCounters::key_type>();
-			// Check if key is a valid CounterValidFlag enum
-			if (key == la::avdecc::entity::model::ClockDomainCounters::key_type::None)
-			{
-				logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown ClockDomainCounterValidFlag name: ") + name);
-				counters.insert(std::make_pair(static_cast<la::avdecc::entity::model::ClockDomainCounters::key_type>(la::avdecc::utils::convertFromString<la::avdecc::entity::model::DescriptorCounterValidFlag>(name.c_str())), value.get<la::avdecc::entity::model::ClockDomainCounters::mapped_type>()));
-			}
-			else
-			{
-				counters.insert(std::make_pair(key, value.get<la::avdecc::entity::model::ClockDomainCounters::mapped_type>()));
-			}
-		}
+		readDescriptorCounters(j, counters);
 	}
 };
 
@@ -320,40 +394,12 @@ struct adl_serializer<la::avdecc::entity::model::StreamInputCounters>
 	static void to_json(json& j, la::avdecc::entity::model::StreamInputCounters const& counters)
 	{
 		auto object = json::object();
-
-		for (auto const& [name, value] : counters)
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<std::string>();
-			if (key == "UNKNOWN")
-			{
-				object[la::avdecc::utils::toHexString(la::avdecc::utils::to_integral(name), true, true)] = value;
-			}
-			else
-			{
-				object[key] = value;
-			}
-		}
-
+		writeDescriptorCounters(counters, object);
 		j = std::move(object);
 	}
 	static void from_json(json const& j, la::avdecc::entity::model::StreamInputCounters& counters)
 	{
-		for (auto const& [name, value] : j.items())
-		{
-			json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-			auto const key = n.get<la::avdecc::entity::model::StreamInputCounters::key_type>();
-			// Check if key is a valid CounterValidFlag enum
-			if (key == la::avdecc::entity::model::StreamInputCounters::key_type::None)
-			{
-				logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown StreamInputCounterValidFlag name: ") + name);
-				counters.insert(std::make_pair(static_cast<la::avdecc::entity::model::StreamInputCounters::key_type>(la::avdecc::utils::convertFromString<la::avdecc::entity::model::DescriptorCounterValidFlag>(name.c_str())), value.get<la::avdecc::entity::model::StreamInputCounters::mapped_type>()));
-			}
-			else
-			{
-				counters.insert(std::make_pair(key, value.get<la::avdecc::entity::model::StreamInputCounters::mapped_type>()));
-			}
-		}
+		readDescriptorCounters(j, counters);
 	}
 };
 
@@ -361,42 +407,13 @@ struct adl_serializer<la::avdecc::entity::model::StreamInputCounters>
 template<typename ValidFlagsType>
 static void writeStreamOutputCounter(la::avdecc::entity::model::StreamOutputCounters const& counters, json& object)
 {
-	auto const c = counters.getCounters<ValidFlagsType>();
-	for (auto const& [name, value] : c)
-	{
-		json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-		auto const key = n.get<std::string>();
-		if (key == "UNKNOWN")
-		{
-			object[la::avdecc::utils::toHexString(la::avdecc::utils::to_integral(name), true, true)] = value;
-		}
-		else
-		{
-			object[key] = value;
-		}
-	}
+	writeDescriptorCounters(counters.getCounters<ValidFlagsType>(), object);
 }
 template<typename ValidFlagsType, typename ValidFlagType = typename ValidFlagsType::value_type, typename CountersType = std::map<ValidFlagType, la::avdecc::entity::model::DescriptorCounter>>
 static void readStreamOutputCounters(json const& object, la::avdecc::entity::model::StreamOutputCounters& counters)
 {
 	auto c = CountersType{};
-
-	for (auto const& [name, value] : object.items())
-	{
-		json const n = name; // Must use operator= instead of constructor to force usage of the to_json overload
-		auto const key = n.get<ValidFlagType>();
-		// Check if key is a valid CounterValidFlag enum
-		if (key == ValidFlagType::None)
-		{
-			logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown StreamOutputCounterValidFlag name: ") + name);
-			c.insert(std::make_pair(static_cast<ValidFlagType>(la::avdecc::utils::convertFromString<la::avdecc::entity::model::DescriptorCounterValidFlag>(name.c_str())), value.template get<typename CountersType::mapped_type>()));
-		}
-		else
-		{
-			c.insert(std::make_pair(key, value.template get<typename CountersType::mapped_type>()));
-		}
-	}
-
+	readDescriptorCounters(object, c);
 	counters.setCounters(c);
 }
 template<>
@@ -480,57 +497,67 @@ namespace avdecc
 {
 namespace utils
 {
-/* TypedDefined conversion */
+/* TypedDefined conversion (Define must have a fromString method) */
+template<typename Define, typename DerivedType = typename Define::derived_type, typename ValueType = typename Define::value_type, typename = std::enable_if_t<std::is_base_of_v<TypedDefine<DerivedType, ValueType>, Define>>>
+void to_json(json& j, Define const& value)
+{
+	// The string representation of a value not defined by the library cannot be converted back (eg. "INVALID_STATUS"), use the hexadecimal representation of the value instead so no information is lost
+	auto const str = static_cast<std::string>(value);
+	try
+	{
+		auto v = Define{};
+		v.fromString(str);
+		if (v == value)
+		{
+			j = str;
+			return;
+		}
+	}
+	catch (std::invalid_argument const&)
+	{
+	}
+
+	auto const hexValue = toHexString(value.getValue(), true, true);
+	logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown TypedDefine value: ") + hexValue);
+	j = hexValue;
+}
 template<typename Define, typename DerivedType = typename Define::derived_type, typename ValueType = typename Define::value_type, typename = std::enable_if_t<std::is_base_of_v<TypedDefine<DerivedType, ValueType>, Define>>>
 void from_json(json const& j, Define& value)
 {
-	value.fromString(j.get<std::string>());
+	auto const str = j.get<std::string>();
+	try
+	{
+		value.fromString(str);
+	}
+	catch (std::invalid_argument const&)
+	{
+		// Not a string representation, should be the hexadecimal representation of a value not defined by the library
+		auto const v = jsonSerializer::detail::parseHexValue<std::uint64_t>(str);
+		if (!v || *v > static_cast<std::uint64_t>(std::numeric_limits<ValueType>::max()))
+		{
+			throw json::type_error::create(302, std::string("Unsupported TypedDefine value: ") + str, &j);
+		}
+		logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown TypedDefine value: ") + str);
+		value.setValue(static_cast<ValueType>(*v));
+	}
 }
 
-/* EnumBitfield conversion */
-template<typename Enum, typename EnumValue = typename Enum::value_type, EnumValue DefaultValue = EnumValue::None, typename = std::enable_if_t<std::is_same_v<Enum, EnumBitfield<EnumValue>>>>
+/* EnumBitfield conversion (EnumValue must be defined using AVDECC_JSON_SERIALIZE_ENUM, so unknown flags are not lost) */
+template<typename Enum, typename EnumValue = typename Enum::value_type, typename = std::enable_if_t<std::is_same_v<Enum, EnumBitfield<EnumValue>>>>
 void to_json(json& j, Enum const& flags)
 {
 	for (auto const flag : flags)
 	{
-		json const conv = flag; // Must use operator= instead of constructor to force usage of the to_json overload
-		AVDECC_ASSERT(conv.is_string(), "Converted Enum should be a string (forgot to define the enum using NLOHMANN_JSON_SERIALIZE_ENUM?");
-		if (conv.get<EnumValue>() != DefaultValue)
-		{
-			j.push_back(flag);
-		}
-		else
-		{
-			auto const value = toHexString(utils::to_integral(flag), true, true);
-			logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown Enum value: ") + value);
-			j.push_back(value);
-		}
+		j.push_back(flag);
 	}
 }
-template<typename Enum, typename EnumValue = typename Enum::value_type, EnumValue DefaultValue = EnumValue::None, typename = std::enable_if_t<std::is_same_v<Enum, EnumBitfield<EnumValue>>>>
+template<typename Enum, typename EnumValue = typename Enum::value_type, typename = std::enable_if_t<std::is_same_v<Enum, EnumBitfield<EnumValue>>>>
 void from_json(json const& j, Enum& flags)
 {
 	for (auto const& o : j)
 	{
-		auto const v = o.get<EnumValue>();
-		if (v == DefaultValue)
-		{
-			auto const value = o.get<std::string>();
-			logJsonSerializer(la::avdecc::logger::Level::Warn, std::string("Unknown Enum value: ") + value);
-			using UnderlyingEnumType = typename Enum::underlying_value_type;
-			if constexpr (sizeof(UnderlyingEnumType) == 1)
-			{
-				flags.set(static_cast<EnumValue>(la::avdecc::utils::convertFromString<std::uint16_t>(value.c_str())));
-			}
-			else
-			{
-				flags.set(static_cast<EnumValue>(la::avdecc::utils::convertFromString<UnderlyingEnumType>(value.c_str())));
-			}
-		}
-		else
-		{
-			flags.set(v);
-		}
+		// Don't use EnumBitfield::set as we cannot guarantee the value read from the file has exactly one bit set
+		flags.assign(static_cast<typename Enum::underlying_value_type>(flags.value() | utils::to_integral(o.get<EnumValue>())));
 	}
 }
 
@@ -575,359 +602,329 @@ constexpr auto Entity_InterfaceInformation_GptpDomainNumber = "gptp_domain_numbe
 } // namespace keyName
 
 /* EntityCapability conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(EntityCapability, {
-																								 { EntityCapability::None, "UNKNOWN" },
-																								 { EntityCapability::EfuMode, "EFU_MODE" },
-																								 { EntityCapability::AddressAccessSupported, "ADDRESS_ACCESS_SUPPORTED" },
-																								 { EntityCapability::GatewayEntity, "GATEWAY_ENTITY" },
-																								 { EntityCapability::AemSupported, "AEM_SUPPORTED" },
-																								 { EntityCapability::LegacyAvc, "LEGACY_AVC" },
-																								 { EntityCapability::AssociationIDSupported, "ASSOCIATION_ID_SUPPORTED" },
-																								 { EntityCapability::AssociationIDValid, "ASSOCIATION_ID_VALID" },
-																								 { EntityCapability::VendorUniqueSupported, "VENDOR_UNIQUE_SUPPORTED" },
-																								 { EntityCapability::ClassASupported, "CLASS_A_SUPPORTED" },
-																								 { EntityCapability::ClassBSupported, "CLASS_B_SUPPORTED" },
-																								 { EntityCapability::GptpSupported, "GPTP_SUPPORTED" },
-																								 { EntityCapability::AemAuthenticationSupported, "AEM_AUTHENTICATION_SUPPORTED" },
-																								 { EntityCapability::AemAuthenticationRequired, "AEM_AUTHENTICATION_REQUIRED" },
-																								 { EntityCapability::AemPersistentAcquireSupported, "AEM_PERSISTENT_ACQUIRE_SUPPORTED" },
-																								 { EntityCapability::AemIdentifyControlIndexValid, "AEM_IDENTIFY_CONTROL_INDEX_VALID" },
-																								 { EntityCapability::AemInterfaceIndexValid, "AEM_INTERFACE_INDEX_VALID" },
-																								 { EntityCapability::GeneralControllerIgnore, "GENERAL_CONTROLLER_IGNORE" },
-																								 { EntityCapability::EntityNotReady, "ENTITY_NOT_READY" },
-																								 { EntityCapability::AcmpAcquireWithAem, "ACMP_ACQUIRE_WITH_AEM" },
-																								 { EntityCapability::AcmpAuthenticateWithAem, "ACMP_AUTHENTICATE_WITH_AEM" },
-																								 { EntityCapability::SupportsUdpv4Atdecc, "SUPPORTS_UDPV4_ATDECC" },
-																								 { EntityCapability::SupportsUdpv4Streaming, "SUPPORTS_UDPV4_STREAMING" },
-																								 { EntityCapability::SupportsUdpv6Atdecc, "SUPPORTS_UDPV6_ATDECC" },
-																								 { EntityCapability::SupportsUdpv6Streaming, "SUPPORTS_UDPV6_STREAMING" },
-																								 { EntityCapability::MultiplePtpInstances, "MULTIPLE_PTP_INSTANCES" },
-																								 { EntityCapability::AemConfigurationIndexValid, "AEM_CONFIGURATION_INDEX_VALID" },
-																							 });
+AVDECC_JSON_SERIALIZE_ENUM(EntityCapability, {
+																							 { EntityCapability::EfuMode, "EFU_MODE" },
+																							 { EntityCapability::AddressAccessSupported, "ADDRESS_ACCESS_SUPPORTED" },
+																							 { EntityCapability::GatewayEntity, "GATEWAY_ENTITY" },
+																							 { EntityCapability::AemSupported, "AEM_SUPPORTED" },
+																							 { EntityCapability::LegacyAvc, "LEGACY_AVC" },
+																							 { EntityCapability::AssociationIDSupported, "ASSOCIATION_ID_SUPPORTED" },
+																							 { EntityCapability::AssociationIDValid, "ASSOCIATION_ID_VALID" },
+																							 { EntityCapability::VendorUniqueSupported, "VENDOR_UNIQUE_SUPPORTED" },
+																							 { EntityCapability::ClassASupported, "CLASS_A_SUPPORTED" },
+																							 { EntityCapability::ClassBSupported, "CLASS_B_SUPPORTED" },
+																							 { EntityCapability::GptpSupported, "GPTP_SUPPORTED" },
+																							 { EntityCapability::AemAuthenticationSupported, "AEM_AUTHENTICATION_SUPPORTED" },
+																							 { EntityCapability::AemAuthenticationRequired, "AEM_AUTHENTICATION_REQUIRED" },
+																							 { EntityCapability::AemPersistentAcquireSupported, "AEM_PERSISTENT_ACQUIRE_SUPPORTED" },
+																							 { EntityCapability::AemIdentifyControlIndexValid, "AEM_IDENTIFY_CONTROL_INDEX_VALID" },
+																							 { EntityCapability::AemInterfaceIndexValid, "AEM_INTERFACE_INDEX_VALID" },
+																							 { EntityCapability::GeneralControllerIgnore, "GENERAL_CONTROLLER_IGNORE" },
+																							 { EntityCapability::EntityNotReady, "ENTITY_NOT_READY" },
+																							 { EntityCapability::AcmpAcquireWithAem, "ACMP_ACQUIRE_WITH_AEM" },
+																							 { EntityCapability::AcmpAuthenticateWithAem, "ACMP_AUTHENTICATE_WITH_AEM" },
+																							 { EntityCapability::SupportsUdpv4Atdecc, "SUPPORTS_UDPV4_ATDECC" },
+																							 { EntityCapability::SupportsUdpv4Streaming, "SUPPORTS_UDPV4_STREAMING" },
+																							 { EntityCapability::SupportsUdpv6Atdecc, "SUPPORTS_UDPV6_ATDECC" },
+																							 { EntityCapability::SupportsUdpv6Streaming, "SUPPORTS_UDPV6_STREAMING" },
+																							 { EntityCapability::MultiplePtpInstances, "MULTIPLE_PTP_INSTANCES" },
+																							 { EntityCapability::AemConfigurationIndexValid, "AEM_CONFIGURATION_INDEX_VALID" },
+																						 });
 
 /* TalkerCapability conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(TalkerCapability, {
-																								 { TalkerCapability::None, "UNKNOWN" },
-																								 { TalkerCapability::Implemented, "IMPLEMENTED" },
-																								 { TalkerCapability::OtherSource, "OTHER_SOURCE" },
-																								 { TalkerCapability::ControlSource, "CONTROL_SOURCE" },
-																								 { TalkerCapability::MediaClockSource, "MEDIA_CLOCK_SOURCE" },
-																								 { TalkerCapability::SmpteSource, "SMPTE_SOURCE" },
-																								 { TalkerCapability::MidiSource, "MIDI_SOURCE" },
-																								 { TalkerCapability::AudioSource, "AUDIO_SOURCE" },
-																								 { TalkerCapability::VideoSource, "VIDEO_SOURCE" },
-																							 });
+AVDECC_JSON_SERIALIZE_ENUM(TalkerCapability, {
+																							 { TalkerCapability::Implemented, "IMPLEMENTED" },
+																							 { TalkerCapability::OtherSource, "OTHER_SOURCE" },
+																							 { TalkerCapability::ControlSource, "CONTROL_SOURCE" },
+																							 { TalkerCapability::MediaClockSource, "MEDIA_CLOCK_SOURCE" },
+																							 { TalkerCapability::SmpteSource, "SMPTE_SOURCE" },
+																							 { TalkerCapability::MidiSource, "MIDI_SOURCE" },
+																							 { TalkerCapability::AudioSource, "AUDIO_SOURCE" },
+																							 { TalkerCapability::VideoSource, "VIDEO_SOURCE" },
+																						 });
 
 /* ListenerCapability conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ListenerCapability, {
-																									 { ListenerCapability::None, "UNKNOWN" },
-																									 { ListenerCapability::Implemented, "IMPLEMENTED" },
-																									 { ListenerCapability::OtherSink, "OTHER_SINK" },
-																									 { ListenerCapability::ControlSink, "CONTROL_SINK" },
-																									 { ListenerCapability::MediaClockSink, "MEDIA_CLOCK_SINK" },
-																									 { ListenerCapability::SmpteSink, "SMPTE_SINK" },
-																									 { ListenerCapability::MidiSink, "MIDI_SINK" },
-																									 { ListenerCapability::AudioSink, "AUDIO_SINK" },
-																									 { ListenerCapability::VideoSink, "VIDEO_SINK" },
-																								 });
+AVDECC_JSON_SERIALIZE_ENUM(ListenerCapability, {
+																								 { ListenerCapability::Implemented, "IMPLEMENTED" },
+																								 { ListenerCapability::OtherSink, "OTHER_SINK" },
+																								 { ListenerCapability::ControlSink, "CONTROL_SINK" },
+																								 { ListenerCapability::MediaClockSink, "MEDIA_CLOCK_SINK" },
+																								 { ListenerCapability::SmpteSink, "SMPTE_SINK" },
+																								 { ListenerCapability::MidiSink, "MIDI_SINK" },
+																								 { ListenerCapability::AudioSink, "AUDIO_SINK" },
+																								 { ListenerCapability::VideoSink, "VIDEO_SINK" },
+																							 });
 
 /* ControllerCapability conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ControllerCapability, {
-																										 { ControllerCapability::None, "UNKNOWN" },
-																										 { ControllerCapability::Implemented, "IMPLEMENTED" },
-																									 });
+AVDECC_JSON_SERIALIZE_ENUM(ControllerCapability, {
+																									 { ControllerCapability::Implemented, "IMPLEMENTED" },
+																								 });
 
 /* ConnectionFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ConnectionFlag, {
-																							 { ConnectionFlag::None, "UNKNOWN" },
-																							 { ConnectionFlag::ClassB, "CLASS_B" },
-																							 { ConnectionFlag::FastConnect, "FAST_CONNECT" },
-																							 { ConnectionFlag::SavedState, "SAVED_STATE" },
-																							 { ConnectionFlag::StreamingWait, "STREAMING_WAIT" },
-																							 { ConnectionFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
-																							 { ConnectionFlag::EncryptedPdu, "ENCRYPTED_PDU" },
-																							 { ConnectionFlag::SrpRegistrationFailed, "SRP_REGISTRATION_FAILED" },
-																							 { ConnectionFlag::ClEntriesValid, "CL_ENTRIES_VALID" },
-																							 { ConnectionFlag::NoSrp, "NO_SRP" },
-																							 { ConnectionFlag::Udp, "UDP" },
-																						 });
+AVDECC_JSON_SERIALIZE_ENUM(ConnectionFlag, {
+																						 { ConnectionFlag::ClassB, "CLASS_B" },
+																						 { ConnectionFlag::FastConnect, "FAST_CONNECT" },
+																						 { ConnectionFlag::SavedState, "SAVED_STATE" },
+																						 { ConnectionFlag::StreamingWait, "STREAMING_WAIT" },
+																						 { ConnectionFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
+																						 { ConnectionFlag::EncryptedPdu, "ENCRYPTED_PDU" },
+																						 { ConnectionFlag::SrpRegistrationFailed, "SRP_REGISTRATION_FAILED" },
+																						 { ConnectionFlag::ClEntriesValid, "CL_ENTRIES_VALID" },
+																						 { ConnectionFlag::NoSrp, "NO_SRP" },
+																						 { ConnectionFlag::Udp, "UDP" },
+																					 });
 
 /* StreamFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamFlag, {
-																					 { StreamFlag::None, "UNKNOWN" },
-																					 { StreamFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
-																					 { StreamFlag::ClassA, "CLASS_A" },
-																					 { StreamFlag::ClassB, "CLASS_B" },
-																					 { StreamFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
-																					 { StreamFlag::PrimaryBackupSupported, "PRIMARY_BACKUP_SUPPORTED" },
-																					 { StreamFlag::PrimaryBackupValid, "PRIMARY_BACKUP_VALID" },
-																					 { StreamFlag::SecondaryBackupSupported, "SECONDARY_BACKUP_SUPPORTED" },
-																					 { StreamFlag::SecondaryBackupValid, "SECONDARY_BACKUP_VALID" },
-																					 { StreamFlag::TertiaryBackupSupported, "TERTIARY_BACKUP_SUPPORTED" },
-																					 { StreamFlag::TertiaryBackupValid, "TERTIARY_BACKUP_VALID" },
-																					 { StreamFlag::SupportsAvtpUdpV4, "SUPPORTS_AVTP_UDP_V4" },
-																					 { StreamFlag::SupportsAvtpUdpV6, "SUPPORTS_AVTP_UDP_V6" },
-																					 { StreamFlag::NoSupportAvtpNative, "NO_SUPPORT_AVTP_NATIVE" },
-																					 { StreamFlag::TimingFieldValid, "TIMING_FIELD_VALID" },
-																					 { StreamFlag::NoMediaClock, "NO_MEDIA_CLOCK" },
-																					 { StreamFlag::SupportsNoSrp, "SUPPORTS_NO_SRP" },
-																				 });
+AVDECC_JSON_SERIALIZE_ENUM(StreamFlag, {
+																				 { StreamFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
+																				 { StreamFlag::ClassA, "CLASS_A" },
+																				 { StreamFlag::ClassB, "CLASS_B" },
+																				 { StreamFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
+																				 { StreamFlag::PrimaryBackupSupported, "PRIMARY_BACKUP_SUPPORTED" },
+																				 { StreamFlag::PrimaryBackupValid, "PRIMARY_BACKUP_VALID" },
+																				 { StreamFlag::SecondaryBackupSupported, "SECONDARY_BACKUP_SUPPORTED" },
+																				 { StreamFlag::SecondaryBackupValid, "SECONDARY_BACKUP_VALID" },
+																				 { StreamFlag::TertiaryBackupSupported, "TERTIARY_BACKUP_SUPPORTED" },
+																				 { StreamFlag::TertiaryBackupValid, "TERTIARY_BACKUP_VALID" },
+																				 { StreamFlag::SupportsAvtpUdpV4, "SUPPORTS_AVTP_UDP_V4" },
+																				 { StreamFlag::SupportsAvtpUdpV6, "SUPPORTS_AVTP_UDP_V6" },
+																				 { StreamFlag::NoSupportAvtpNative, "NO_SUPPORT_AVTP_NATIVE" },
+																				 { StreamFlag::TimingFieldValid, "TIMING_FIELD_VALID" },
+																				 { StreamFlag::NoMediaClock, "NO_MEDIA_CLOCK" },
+																				 { StreamFlag::SupportsNoSrp, "SUPPORTS_NO_SRP" },
+																			 });
 
 /* JackFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(JackFlag, {
-																				 { JackFlag::None, "UNKNOWN" },
-																				 { JackFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
-																				 { JackFlag::Captive, "CAPTIVE" },
-																			 });
+AVDECC_JSON_SERIALIZE_ENUM(JackFlag, {
+																			 { JackFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
+																			 { JackFlag::Captive, "CAPTIVE" },
+																		 });
 
 /* AvbInterfaceFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AvbInterfaceFlag, {
-																								 { AvbInterfaceFlag::None, "UNKNOWN" },
-																								 { AvbInterfaceFlag::GptpGrandmasterSupported, "GPTP_GRANDMASTER_SUPPORTED" },
-																								 { AvbInterfaceFlag::GptpSupported, "GPTP_SUPPORTED" },
-																								 { AvbInterfaceFlag::SrpSupported, "SRP_SUPPORTED" },
-																								 { AvbInterfaceFlag::FqtssNotSupported, "FQTSS_NOT_SUPPORTED" },
-																								 { AvbInterfaceFlag::ScheduledTrafficSupported, "SCHEDULED_TRAFFIC_SUPPORTED" },
-																								 { AvbInterfaceFlag::CanListenToSelf, "CAN_LISTEN_TO_SELF" },
-																								 { AvbInterfaceFlag::CanListenToOtherSelf, "CAN_LISTEN_TO_OTHER_SELF" },
-																							 });
-
-/* ClockSourceFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ClockSourceFlag, {
-																								{ ClockSourceFlag::None, "UNKNOWN" },
-																								{ ClockSourceFlag::StreamID, "STREAM_ID" },
-																								{ ClockSourceFlag::LocalID, "LOCAL_ID" },
-																							});
-
-/* PortFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(PortFlag, {
-																				 { PortFlag::None, "UNKNOWN" },
-																				 { PortFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
-																				 { PortFlag::AsyncSampleRateConv, "ASYNC_SAMPLE_RATE_CONV" },
-																				 { PortFlag::SyncSampleRateConv, "SYNC_SAMPLE_RATE_CONV" },
-																			 });
-
-/* PtpInstanceFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(PtpInstanceFlag, {
-																								{ PtpInstanceFlag::None, "UNKNOWN" },
-																								{ PtpInstanceFlag::CanSetInstanceEnable, "CAN_SET_INSTANCE_ENABLE" },
-																								{ PtpInstanceFlag::CanSetPriority1, "CAN_SET_PRIORITY_1" },
-																								{ PtpInstanceFlag::CanSetPriority2, "CAN_SET_PRIORITY_2" },
-																								{ PtpInstanceFlag::CanSetDomainNumber, "CAN_SET_DOMAIN_NUMBER" },
-																								{ PtpInstanceFlag::CanSetExternalPortConfiguration, "CAN_SET_EXTERNAL_PORT_CONFIGURATION" },
-																								{ PtpInstanceFlag::CanSetSlaveOnly, "CAN_SET_SLAVE_ONLY" },
-																								{ PtpInstanceFlag::CanEnablePerformance, "CAN_ENABLE_PERFORMANCE" },
-																								{ PtpInstanceFlag::PerformanceMonitoring, "PERFORMANCE_MONITORING" },
-																								{ PtpInstanceFlag::GrandmasterCapable, "GRANDMASTER_CAPABLE" },
-																							});
-
-/* PtpPortFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(PtpPortFlag, {
-																						{ PtpPortFlag::None, "UNKNOWN" },
-																						{ PtpPortFlag::CanSetEnable, "CAN_SET_ENABLE" },
-																						{ PtpPortFlag::CanSetLinkDelayThreshold, "CAN_SET_LINK_DELAY_THRESHOLD" },
-																						{ PtpPortFlag::CanSetDelayMechanism, "CAN_SET_DELAY_MECHANISM" },
-																						{ PtpPortFlag::CanSetDelayAsymmetry, "CAN_SET_DELAY_ASYMMETRY" },
-																						{ PtpPortFlag::CanSetInitialMessageIntervals, "CAN_SET_INITIAL_MESSAGE_INTERVALS" },
-																						{ PtpPortFlag::CanSetTimeouts, "CAN_SET_TIMEOUTS" },
-																						{ PtpPortFlag::CanOverrideAnnounceInterval, "CAN_OVERRIDE_ANNOUNCE_INTERVAL" },
-																						{ PtpPortFlag::CanOverrideSyncInterval, "CAN_OVERRIDE_SYNC_INTERVAL" },
-																						{ PtpPortFlag::CanOverridePDelayInterval, "CAN_OVERRIDE_PDELAY_INTERVAL" },
-																						{ PtpPortFlag::CanOverrideGptpCapableInterval, "CAN_OVERRIDE_GPTP_CAPABLE_INTERVAL" },
-																						{ PtpPortFlag::CanOverrideComputeNeighbor, "CAN_OVERRIDE_COMPUTE_NEIGHBOR" },
-																						{ PtpPortFlag::CanOverrideComputeLinkDelay, "CAN_OVERRIDE_COMPUTE_LINK_DELAY" },
-																						{ PtpPortFlag::CanOverrideOnestep, "CAN_OVERRIDE_ONESTEP" },
-																						{ PtpPortFlag::SupportsRemoteIntervalSignal, "SUPPORTS_REMOTE_INTERVAL_SIGNAL" },
-																						{ PtpPortFlag::SupportsOnestepTransmit, "SUPPORTS_ONESTEP_TRANSMIT" },
-																						{ PtpPortFlag::SupportsOnestepReceive, "SUPPORTS_ONESTEP_RECEIVE" },
-																						{ PtpPortFlag::SupportsUnicastNegotiate, "SUPPORTS_UNICAST_NEGOTIATE" },
-																					});
-
-/* StreamInfoFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamInfoFlag, {
-																							 { StreamInfoFlag::None, "UNKNOWN" },
-																							 { StreamInfoFlag::ClassB, "CLASS_B" },
-																							 { StreamInfoFlag::FastConnect, "FAST_CONNECT" },
-																							 { StreamInfoFlag::SavedState, "SAVED_STATE" },
-																							 { StreamInfoFlag::StreamingWait, "STREAMING_WAIT" },
-																							 { StreamInfoFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
-																							 { StreamInfoFlag::EncryptedPdu, "ENCRYPTED_PDU" },
-																							 { StreamInfoFlag::SrpRegistrationFailed, "SRP_REGISTRATION_FAILED" },
-																							 { StreamInfoFlag::ClEntriesValid, "CL_ENTRIES_VALID" },
-																							 { StreamInfoFlag::NoSrp, "NO_SRP" },
-																							 { StreamInfoFlag::Udp, "UDP" },
-																							 { StreamInfoFlag::IpFlagsValid, "IP_FLAGS_VALID" },
-																							 { StreamInfoFlag::IpSrcPortValid, "IP_SRC_PORT_VALID" },
-																							 { StreamInfoFlag::IpDstPortValid, "IP_DST_PORT_VALID" },
-																							 { StreamInfoFlag::IpSrcAddrValid, "IP_SRC_ADDR_VALID" },
-																							 { StreamInfoFlag::IpDstAddrValid, "IP_DST_ADDR_VALID" },
-																							 { StreamInfoFlag::NotRegisteringSrp, "NOT_REGISTERING_SRP" },
-																							 { StreamInfoFlag::StreamVlanIDValid, "STREAM_VLAN_ID_VALID" },
-																							 { StreamInfoFlag::Connected, "CONNECTED" },
-																							 { StreamInfoFlag::MsrpFailureValid, "MSRP_FAILURE_VALID" },
-																							 { StreamInfoFlag::StreamDestMacValid, "STREAM_DEST_MAC_VALID" },
-																							 { StreamInfoFlag::MsrpAccLatValid, "MSRP_ACC_LAT_VALID" },
-																							 { StreamInfoFlag::StreamIDValid, "STREAM_ID_VALID" },
-																							 { StreamInfoFlag::StreamFormatValid, "STREAM_FORMAT_VALID" },
+AVDECC_JSON_SERIALIZE_ENUM(AvbInterfaceFlag, {
+																							 { AvbInterfaceFlag::GptpGrandmasterSupported, "GPTP_GRANDMASTER_SUPPORTED" },
+																							 { AvbInterfaceFlag::GptpSupported, "GPTP_SUPPORTED" },
+																							 { AvbInterfaceFlag::SrpSupported, "SRP_SUPPORTED" },
+																							 { AvbInterfaceFlag::FqtssNotSupported, "FQTSS_NOT_SUPPORTED" },
+																							 { AvbInterfaceFlag::ScheduledTrafficSupported, "SCHEDULED_TRAFFIC_SUPPORTED" },
+																							 { AvbInterfaceFlag::CanListenToSelf, "CAN_LISTEN_TO_SELF" },
+																							 { AvbInterfaceFlag::CanListenToOtherSelf, "CAN_LISTEN_TO_OTHER_SELF" },
 																						 });
 
+/* ClockSourceFlag conversion */
+AVDECC_JSON_SERIALIZE_ENUM(ClockSourceFlag, {
+																							{ ClockSourceFlag::StreamID, "STREAM_ID" },
+																							{ ClockSourceFlag::LocalID, "LOCAL_ID" },
+																						});
+
+/* PortFlag conversion */
+AVDECC_JSON_SERIALIZE_ENUM(PortFlag, {
+																			 { PortFlag::ClockSyncSource, "CLOCK_SYNC_SOURCE" },
+																			 { PortFlag::AsyncSampleRateConv, "ASYNC_SAMPLE_RATE_CONV" },
+																			 { PortFlag::SyncSampleRateConv, "SYNC_SAMPLE_RATE_CONV" },
+																		 });
+
+/* PtpInstanceFlag conversion */
+AVDECC_JSON_SERIALIZE_ENUM(PtpInstanceFlag, {
+																							{ PtpInstanceFlag::CanSetInstanceEnable, "CAN_SET_INSTANCE_ENABLE" },
+																							{ PtpInstanceFlag::CanSetPriority1, "CAN_SET_PRIORITY_1" },
+																							{ PtpInstanceFlag::CanSetPriority2, "CAN_SET_PRIORITY_2" },
+																							{ PtpInstanceFlag::CanSetDomainNumber, "CAN_SET_DOMAIN_NUMBER" },
+																							{ PtpInstanceFlag::CanSetExternalPortConfiguration, "CAN_SET_EXTERNAL_PORT_CONFIGURATION" },
+																							{ PtpInstanceFlag::CanSetSlaveOnly, "CAN_SET_SLAVE_ONLY" },
+																							{ PtpInstanceFlag::CanEnablePerformance, "CAN_ENABLE_PERFORMANCE" },
+																							{ PtpInstanceFlag::PerformanceMonitoring, "PERFORMANCE_MONITORING" },
+																							{ PtpInstanceFlag::GrandmasterCapable, "GRANDMASTER_CAPABLE" },
+																						});
+
+/* PtpPortFlag conversion */
+AVDECC_JSON_SERIALIZE_ENUM(PtpPortFlag, {
+																					{ PtpPortFlag::CanSetEnable, "CAN_SET_ENABLE" },
+																					{ PtpPortFlag::CanSetLinkDelayThreshold, "CAN_SET_LINK_DELAY_THRESHOLD" },
+																					{ PtpPortFlag::CanSetDelayMechanism, "CAN_SET_DELAY_MECHANISM" },
+																					{ PtpPortFlag::CanSetDelayAsymmetry, "CAN_SET_DELAY_ASYMMETRY" },
+																					{ PtpPortFlag::CanSetInitialMessageIntervals, "CAN_SET_INITIAL_MESSAGE_INTERVALS" },
+																					{ PtpPortFlag::CanSetTimeouts, "CAN_SET_TIMEOUTS" },
+																					{ PtpPortFlag::CanOverrideAnnounceInterval, "CAN_OVERRIDE_ANNOUNCE_INTERVAL" },
+																					{ PtpPortFlag::CanOverrideSyncInterval, "CAN_OVERRIDE_SYNC_INTERVAL" },
+																					{ PtpPortFlag::CanOverridePDelayInterval, "CAN_OVERRIDE_PDELAY_INTERVAL" },
+																					{ PtpPortFlag::CanOverrideGptpCapableInterval, "CAN_OVERRIDE_GPTP_CAPABLE_INTERVAL" },
+																					{ PtpPortFlag::CanOverrideComputeNeighbor, "CAN_OVERRIDE_COMPUTE_NEIGHBOR" },
+																					{ PtpPortFlag::CanOverrideComputeLinkDelay, "CAN_OVERRIDE_COMPUTE_LINK_DELAY" },
+																					{ PtpPortFlag::CanOverrideOnestep, "CAN_OVERRIDE_ONESTEP" },
+																					{ PtpPortFlag::SupportsRemoteIntervalSignal, "SUPPORTS_REMOTE_INTERVAL_SIGNAL" },
+																					{ PtpPortFlag::SupportsOnestepTransmit, "SUPPORTS_ONESTEP_TRANSMIT" },
+																					{ PtpPortFlag::SupportsOnestepReceive, "SUPPORTS_ONESTEP_RECEIVE" },
+																					{ PtpPortFlag::SupportsUnicastNegotiate, "SUPPORTS_UNICAST_NEGOTIATE" },
+																				});
+
+/* StreamInfoFlag conversion */
+AVDECC_JSON_SERIALIZE_ENUM(StreamInfoFlag, {
+																						 { StreamInfoFlag::ClassB, "CLASS_B" },
+																						 { StreamInfoFlag::FastConnect, "FAST_CONNECT" },
+																						 { StreamInfoFlag::SavedState, "SAVED_STATE" },
+																						 { StreamInfoFlag::StreamingWait, "STREAMING_WAIT" },
+																						 { StreamInfoFlag::SupportsEncrypted, "SUPPORTS_ENCRYPTED" },
+																						 { StreamInfoFlag::EncryptedPdu, "ENCRYPTED_PDU" },
+																						 { StreamInfoFlag::SrpRegistrationFailed, "SRP_REGISTRATION_FAILED" },
+																						 { StreamInfoFlag::ClEntriesValid, "CL_ENTRIES_VALID" },
+																						 { StreamInfoFlag::NoSrp, "NO_SRP" },
+																						 { StreamInfoFlag::Udp, "UDP" },
+																						 { StreamInfoFlag::IpFlagsValid, "IP_FLAGS_VALID" },
+																						 { StreamInfoFlag::IpSrcPortValid, "IP_SRC_PORT_VALID" },
+																						 { StreamInfoFlag::IpDstPortValid, "IP_DST_PORT_VALID" },
+																						 { StreamInfoFlag::IpSrcAddrValid, "IP_SRC_ADDR_VALID" },
+																						 { StreamInfoFlag::IpDstAddrValid, "IP_DST_ADDR_VALID" },
+																						 { StreamInfoFlag::NotRegisteringSrp, "NOT_REGISTERING_SRP" },
+																						 { StreamInfoFlag::StreamVlanIDValid, "STREAM_VLAN_ID_VALID" },
+																						 { StreamInfoFlag::Connected, "CONNECTED" },
+																						 { StreamInfoFlag::MsrpFailureValid, "MSRP_FAILURE_VALID" },
+																						 { StreamInfoFlag::StreamDestMacValid, "STREAM_DEST_MAC_VALID" },
+																						 { StreamInfoFlag::MsrpAccLatValid, "MSRP_ACC_LAT_VALID" },
+																						 { StreamInfoFlag::StreamIDValid, "STREAM_ID_VALID" },
+																						 { StreamInfoFlag::StreamFormatValid, "STREAM_FORMAT_VALID" },
+																					 });
+
 /* StreamInfoFlagEx conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamInfoFlagEx, {
-																								 { StreamInfoFlagEx::None, "UNKNOWN" },
-																								 { StreamInfoFlagEx::Registering, "REGISTERING" },
-																							 });
+AVDECC_JSON_SERIALIZE_ENUM(StreamInfoFlagEx, {
+																							 { StreamInfoFlagEx::Registering, "REGISTERING" },
+																						 });
 
 /* AvbInfoFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AvbInfoFlag, {
-																						{ AvbInfoFlag::None, "UNKNOWN" },
-																						{ AvbInfoFlag::AsCapable, "AS_CAPABLE" },
-																						{ AvbInfoFlag::GptpEnabled, "GPTP_ENABLED" },
-																						{ AvbInfoFlag::SrpEnabled, "SRP_ENABLED" },
-																						{ AvbInfoFlag::AvtpDown, "AVTP_DOWN" },
-																						{ AvbInfoFlag::AvtpDownValid, "AVTP_DOWN_VALID" },
-																					});
+AVDECC_JSON_SERIALIZE_ENUM(AvbInfoFlag, {
+																					{ AvbInfoFlag::AsCapable, "AS_CAPABLE" },
+																					{ AvbInfoFlag::GptpEnabled, "GPTP_ENABLED" },
+																					{ AvbInfoFlag::SrpEnabled, "SRP_ENABLED" },
+																					{ AvbInfoFlag::AvtpDown, "AVTP_DOWN" },
+																					{ AvbInfoFlag::AvtpDownValid, "AVTP_DOWN_VALID" },
+																				});
 
 /* EntityCounterValidFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(EntityCounterValidFlag, {
-																											 { EntityCounterValidFlag::None, "UNKNOWN" },
-																											 { EntityCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																											 { EntityCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																											 { EntityCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																											 { EntityCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																											 { EntityCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																											 { EntityCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																											 { EntityCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																											 { EntityCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
-																										 });
+AVDECC_JSON_SERIALIZE_ENUM(EntityCounterValidFlag, {
+																										 { EntityCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																										 { EntityCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																										 { EntityCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																										 { EntityCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																										 { EntityCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																										 { EntityCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																										 { EntityCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																										 { EntityCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																									 });
 
 /* AvbInterfaceCounterValidFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AvbInterfaceCounterValidFlag, {
-																														 { AvbInterfaceCounterValidFlag::None, "UNKNOWN" },
-																														 { AvbInterfaceCounterValidFlag::LinkUp, "LINK_UP" },
-																														 { AvbInterfaceCounterValidFlag::LinkDown, "LINK_DOWN" },
-																														 { AvbInterfaceCounterValidFlag::FramesTx, "FRAMES_TX" },
-																														 { AvbInterfaceCounterValidFlag::FramesRx, "FRAMES_RX" },
-																														 { AvbInterfaceCounterValidFlag::RxCrcError, "RX_CRC_ERROR" },
-																														 { AvbInterfaceCounterValidFlag::GptpGmChanged, "GPTP_GM_CHANGED" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																														 { AvbInterfaceCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
-																													 });
+AVDECC_JSON_SERIALIZE_ENUM(AvbInterfaceCounterValidFlag, {
+																													 { AvbInterfaceCounterValidFlag::LinkUp, "LINK_UP" },
+																													 { AvbInterfaceCounterValidFlag::LinkDown, "LINK_DOWN" },
+																													 { AvbInterfaceCounterValidFlag::FramesTx, "FRAMES_TX" },
+																													 { AvbInterfaceCounterValidFlag::FramesRx, "FRAMES_RX" },
+																													 { AvbInterfaceCounterValidFlag::RxCrcError, "RX_CRC_ERROR" },
+																													 { AvbInterfaceCounterValidFlag::GptpGmChanged, "GPTP_GM_CHANGED" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																													 { AvbInterfaceCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																												 });
 
 /* ClockDomainCounterValidFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ClockDomainCounterValidFlag, {
-																														{ ClockDomainCounterValidFlag::None, "UNKNOWN" },
-																														{ ClockDomainCounterValidFlag::Locked, "LOCKED" },
-																														{ ClockDomainCounterValidFlag::Unlocked, "UNLOCKED" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																														{ ClockDomainCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
-																													});
+AVDECC_JSON_SERIALIZE_ENUM(ClockDomainCounterValidFlag, {
+																													{ ClockDomainCounterValidFlag::Locked, "LOCKED" },
+																													{ ClockDomainCounterValidFlag::Unlocked, "UNLOCKED" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																													{ ClockDomainCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																												});
 
 /* StreamInputCounterValidFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamInputCounterValidFlag, {
-																														{ StreamInputCounterValidFlag::None, "UNKNOWN" },
-																														{ StreamInputCounterValidFlag::MediaLocked, "MEDIA_LOCKED" },
-																														{ StreamInputCounterValidFlag::MediaUnlocked, "MEDIA_UNLOCKED" },
-																														{ StreamInputCounterValidFlag::StreamInterrupted, "STREAM_INTERRUPTED" },
-																														{ StreamInputCounterValidFlag::SeqNumMismatch, "SEQ_NUM_MISMATCH" },
-																														{ StreamInputCounterValidFlag::MediaReset, "MEDIA_RESET" },
-																														{ StreamInputCounterValidFlag::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
-																														{ StreamInputCounterValidFlag::TimestampValid, "TIMESTAMP_VALID" },
-																														{ StreamInputCounterValidFlag::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
-																														{ StreamInputCounterValidFlag::UnsupportedFormat, "UNSUPPORTED_FORMAT" },
-																														{ StreamInputCounterValidFlag::LateTimestamp, "LATE_TIMESTAMP" },
-																														{ StreamInputCounterValidFlag::EarlyTimestamp, "EARLY_TIMESTAMP" },
-																														{ StreamInputCounterValidFlag::FramesRx, "FRAMES_RX" },
-																														{ StreamInputCounterValidFlag::FramesTx, "FRAMES_TX" },
-																														{ StreamInputCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																														{ StreamInputCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																														{ StreamInputCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																														{ StreamInputCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																														{ StreamInputCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																														{ StreamInputCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																														{ StreamInputCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																														{ StreamInputCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
-																													});
-/* StreamOutputCounters::CounterType */
-NLOHMANN_JSON_SERIALIZE_ENUM(model::StreamOutputCounters::CounterType, {
-																																				 { model::StreamOutputCounters::CounterType::Unknown, "UNKNOWN" },
-																																				 { model::StreamOutputCounters::CounterType::Milan_12, "MILAN_12" },
-																																				 { model::StreamOutputCounters::CounterType::IEEE17221_2021, "IEEE17221_2021" },
-																																				 { model::StreamOutputCounters::CounterType::Milan_SignalPresence, "MILAN_SIGNAL_PRESENCE" },
-																																			 });
+AVDECC_JSON_SERIALIZE_ENUM(StreamInputCounterValidFlag, {
+																													{ StreamInputCounterValidFlag::MediaLocked, "MEDIA_LOCKED" },
+																													{ StreamInputCounterValidFlag::MediaUnlocked, "MEDIA_UNLOCKED" },
+																													{ StreamInputCounterValidFlag::StreamInterrupted, "STREAM_INTERRUPTED" },
+																													{ StreamInputCounterValidFlag::SeqNumMismatch, "SEQ_NUM_MISMATCH" },
+																													{ StreamInputCounterValidFlag::MediaReset, "MEDIA_RESET" },
+																													{ StreamInputCounterValidFlag::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
+																													{ StreamInputCounterValidFlag::TimestampValid, "TIMESTAMP_VALID" },
+																													{ StreamInputCounterValidFlag::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
+																													{ StreamInputCounterValidFlag::UnsupportedFormat, "UNSUPPORTED_FORMAT" },
+																													{ StreamInputCounterValidFlag::LateTimestamp, "LATE_TIMESTAMP" },
+																													{ StreamInputCounterValidFlag::EarlyTimestamp, "EARLY_TIMESTAMP" },
+																													{ StreamInputCounterValidFlag::FramesRx, "FRAMES_RX" },
+																													{ StreamInputCounterValidFlag::FramesTx, "FRAMES_TX" },
+																													{ StreamInputCounterValidFlag::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																													{ StreamInputCounterValidFlag::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																													{ StreamInputCounterValidFlag::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																													{ StreamInputCounterValidFlag::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																													{ StreamInputCounterValidFlag::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																													{ StreamInputCounterValidFlag::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																													{ StreamInputCounterValidFlag::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																													{ StreamInputCounterValidFlag::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																												});
 /* StreamOutputCounterValidFlagMilan12 conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlagMilan12, {
-																																		{ StreamOutputCounterValidFlagMilan12::None, "UNKNOWN" },
-																																		{ StreamOutputCounterValidFlagMilan12::StreamStart, "STREAM_START" },
-																																		{ StreamOutputCounterValidFlagMilan12::StreamStop, "STREAM_STOP" },
-																																		{ StreamOutputCounterValidFlagMilan12::MediaReset, "MEDIA_RESET" },
-																																		{ StreamOutputCounterValidFlagMilan12::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
-																																		{ StreamOutputCounterValidFlagMilan12::FramesTx, "FRAMES_TX" },
-																																	});
-
-/* StreamOutputCounterValidFlag17221 conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlag17221, {
-																																	{ StreamOutputCounterValidFlag17221::None, "UNKNOWN" },
-																																	{ StreamOutputCounterValidFlag17221::StreamStart, "STREAM_START" },
-																																	{ StreamOutputCounterValidFlag17221::StreamStop, "STREAM_STOP" },
-																																	{ StreamOutputCounterValidFlag17221::StreamInterrupted, "STREAM_INTERRUPTED" },
-																																	{ StreamOutputCounterValidFlag17221::MediaReset, "MEDIA_RESET" },
-																																	{ StreamOutputCounterValidFlag17221::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
-																																	{ StreamOutputCounterValidFlag17221::TimestampValid, "TIMESTAMP_VALID" },
-																																	{ StreamOutputCounterValidFlag17221::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
-																																	{ StreamOutputCounterValidFlag17221::FramesTx, "FRAMES_TX" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																																	{ StreamOutputCounterValidFlag17221::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+AVDECC_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlagMilan12, {
+																																	{ StreamOutputCounterValidFlagMilan12::StreamStart, "STREAM_START" },
+																																	{ StreamOutputCounterValidFlagMilan12::StreamStop, "STREAM_STOP" },
+																																	{ StreamOutputCounterValidFlagMilan12::MediaReset, "MEDIA_RESET" },
+																																	{ StreamOutputCounterValidFlagMilan12::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
+																																	{ StreamOutputCounterValidFlagMilan12::FramesTx, "FRAMES_TX" },
 																																});
 
+/* StreamOutputCounterValidFlag17221 conversion */
+AVDECC_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlag17221, {
+																																{ StreamOutputCounterValidFlag17221::StreamStart, "STREAM_START" },
+																																{ StreamOutputCounterValidFlag17221::StreamStop, "STREAM_STOP" },
+																																{ StreamOutputCounterValidFlag17221::StreamInterrupted, "STREAM_INTERRUPTED" },
+																																{ StreamOutputCounterValidFlag17221::MediaReset, "MEDIA_RESET" },
+																																{ StreamOutputCounterValidFlag17221::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
+																																{ StreamOutputCounterValidFlag17221::TimestampValid, "TIMESTAMP_VALID" },
+																																{ StreamOutputCounterValidFlag17221::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
+																																{ StreamOutputCounterValidFlag17221::FramesTx, "FRAMES_TX" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																																{ StreamOutputCounterValidFlag17221::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																															});
+
 /* StreamOutputCounterValidFlagMilanSignalPresence conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlagMilanSignalPresence, {
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::None, "UNKNOWN" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::StreamStart, "STREAM_START" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::StreamStop, "STREAM_STOP" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::StreamInterrupted, "STREAM_INTERRUPTED" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::MediaReset, "MEDIA_RESET" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampValid, "TIMESTAMP_VALID" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::FramesTx, "FRAMES_TX" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::SignalPresence2, "SIGNAL_PRESENCE_2" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::SignalPresence1, "SIGNAL_PRESENCE_1" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific8, "ENTITY_SPECIFIC_8" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific7, "ENTITY_SPECIFIC_7" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific6, "ENTITY_SPECIFIC_6" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific5, "ENTITY_SPECIFIC_5" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific4, "ENTITY_SPECIFIC_4" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific3, "ENTITY_SPECIFIC_3" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific2, "ENTITY_SPECIFIC_2" },
-																																								{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific1, "ENTITY_SPECIFIC_1" },
-																																							});
+AVDECC_JSON_SERIALIZE_ENUM(StreamOutputCounterValidFlagMilanSignalPresence, {
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::StreamStart, "STREAM_START" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::StreamStop, "STREAM_STOP" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::StreamInterrupted, "STREAM_INTERRUPTED" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::MediaReset, "MEDIA_RESET" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampUncertain, "TIMESTAMP_UNCERTAIN" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampValid, "TIMESTAMP_VALID" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::TimestampNotValid, "TIMESTAMP_NOT_VALID" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::FramesTx, "FRAMES_TX" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::SignalPresence2, "SIGNAL_PRESENCE_2" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::SignalPresence1, "SIGNAL_PRESENCE_1" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific8, "ENTITY_SPECIFIC_8" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific7, "ENTITY_SPECIFIC_7" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific6, "ENTITY_SPECIFIC_6" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific5, "ENTITY_SPECIFIC_5" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific4, "ENTITY_SPECIFIC_4" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific3, "ENTITY_SPECIFIC_3" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific2, "ENTITY_SPECIFIC_2" },
+																																							{ StreamOutputCounterValidFlagMilanSignalPresence::EntitySpecific1, "ENTITY_SPECIFIC_1" },
+																																						});
 
 /* MilanInfoFeaturesFlag conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(MilanInfoFeaturesFlag, {
-																											{ MilanInfoFeaturesFlag::None, "UNKNOWN" },
-																											{ MilanInfoFeaturesFlag::Redundancy, "REDUNDANCY" },
-																											{ MilanInfoFeaturesFlag::TalkerDynamicMappingsWhileRunning, "TALKER_DYNAMIC_MAPPINGS_WHILE_RUNNING" },
-																											{ MilanInfoFeaturesFlag::MvuBinding, "MVU_BINDING" },
-																											{ MilanInfoFeaturesFlag::TalkerSignalPresence, "TALKER_SIGNAL_PRESENCE" },
-																										});
+AVDECC_JSON_SERIALIZE_ENUM(MilanInfoFeaturesFlag, {
+																										{ MilanInfoFeaturesFlag::Redundancy, "REDUNDANCY" },
+																										{ MilanInfoFeaturesFlag::TalkerDynamicMappingsWhileRunning, "TALKER_DYNAMIC_MAPPINGS_WHILE_RUNNING" },
+																										{ MilanInfoFeaturesFlag::MvuBinding, "MVU_BINDING" },
+																										{ MilanInfoFeaturesFlag::TalkerSignalPresence, "TALKER_SIGNAL_PRESENCE" },
+																									});
 
 /* Entity::CommonInformation conversion */
 inline void to_json(json& j, Entity::CommonInformation const& commonInfo)
@@ -1294,298 +1291,272 @@ constexpr auto Node_FormatVersion = std::uint32_t{ 2u };
 
 } // namespace keyValue
 
+/* StreamOutputCounters::CounterType */
+AVDECC_JSON_SERIALIZE_ENUM(StreamOutputCounters::CounterType, {
+																																{ StreamOutputCounters::CounterType::Unknown, "UNKNOWN" },
+																																{ StreamOutputCounters::CounterType::Milan_12, "MILAN_12" },
+																																{ StreamOutputCounters::CounterType::IEEE17221_2021, "IEEE17221_2021" },
+																																{ StreamOutputCounters::CounterType::Milan_SignalPresence, "MILAN_SIGNAL_PRESENCE" },
+																															});
+
 /* DescriptorType conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(DescriptorType, {
-																							 { DescriptorType::Invalid, "INVALID" },
-																							 { DescriptorType::Entity, "ENTITY" },
-																							 { DescriptorType::Configuration, "CONFIGURATION" },
-																							 { DescriptorType::AudioUnit, "AUDIO_UNIT" },
-																							 { DescriptorType::VideoUnit, "VIDEO_UNIT" },
-																							 { DescriptorType::SensorUnit, "SENSOR_UNIT" },
-																							 { DescriptorType::StreamInput, "STREAM_INPUT" },
-																							 { DescriptorType::StreamOutput, "STREAM_OUTPUT" },
-																							 { DescriptorType::JackInput, "JACK_INPUT" },
-																							 { DescriptorType::JackOutput, "JACK_OUTPUT" },
-																							 { DescriptorType::AvbInterface, "AVB_INTERFACE" },
-																							 { DescriptorType::ClockSource, "CLOCK_SOURCE" },
-																							 { DescriptorType::MemoryObject, "MEMORY_OBJECT" },
-																							 { DescriptorType::Locale, "LOCALE" },
-																							 { DescriptorType::Strings, "STRINGS" },
-																							 { DescriptorType::StreamPortInput, "STREAM_PORT_INPUT" },
-																							 { DescriptorType::StreamPortOutput, "STREAM_PORT_OUTPUT" },
-																							 { DescriptorType::ExternalPortInput, "EXTERNAL_PORT_INPUT" },
-																							 { DescriptorType::ExternalPortOutput, "EXTERNAL_PORT_OUTPUT" },
-																							 { DescriptorType::InternalPortInput, "INTERNAL_PORT_INPUT" },
-																							 { DescriptorType::InternalPortOutput, "INTERNAL_PORT_OUTPUT" },
-																							 { DescriptorType::AudioCluster, "AUDIO_CLUSTER" },
-																							 { DescriptorType::VideoCluster, "VIDEO_CLUSTER" },
-																							 { DescriptorType::SensorCluster, "SENSOR_CLUSTER" },
-																							 { DescriptorType::AudioMap, "AUDIO_MAP" },
-																							 { DescriptorType::VideoMap, "VIDEO_MAP" },
-																							 { DescriptorType::SensorMap, "SENSOR_MAP" },
-																							 { DescriptorType::Control, "CONTROL" },
-																							 { DescriptorType::SignalSelector, "SIGNAL_SELECTOR" },
-																							 { DescriptorType::Mixer, "MIXER" },
-																							 { DescriptorType::Matrix, "MATRIX" },
-																							 { DescriptorType::MatrixSignal, "MATRIX_SIGNAL" },
-																							 { DescriptorType::SignalSplitter, "SIGNAL_SPLITTER" },
-																							 { DescriptorType::SignalCombiner, "SIGNAL_COMBINER" },
-																							 { DescriptorType::SignalDemultiplexer, "SIGNAL_DEMULTIPLEXER" },
-																							 { DescriptorType::SignalMultiplexer, "SIGNAL_MULTIPLEXER" },
-																							 { DescriptorType::SignalTranscoder, "SIGNAL_TRANSCODER" },
-																							 { DescriptorType::ClockDomain, "CLOCK_DOMAIN" },
-																							 { DescriptorType::ControlBlock, "CONTROL_BLOCK" },
-																							 { DescriptorType::Timing, "TIMING" },
-																							 { DescriptorType::PtpInstance, "PTP_INSTANCE" },
-																							 { DescriptorType::PtpPort, "PTP_PORT" },
-																						 });
+AVDECC_JSON_SERIALIZE_ENUM(DescriptorType, {
+																						 { DescriptorType::Invalid, "INVALID" },
+																						 { DescriptorType::Entity, "ENTITY" },
+																						 { DescriptorType::Configuration, "CONFIGURATION" },
+																						 { DescriptorType::AudioUnit, "AUDIO_UNIT" },
+																						 { DescriptorType::VideoUnit, "VIDEO_UNIT" },
+																						 { DescriptorType::SensorUnit, "SENSOR_UNIT" },
+																						 { DescriptorType::StreamInput, "STREAM_INPUT" },
+																						 { DescriptorType::StreamOutput, "STREAM_OUTPUT" },
+																						 { DescriptorType::JackInput, "JACK_INPUT" },
+																						 { DescriptorType::JackOutput, "JACK_OUTPUT" },
+																						 { DescriptorType::AvbInterface, "AVB_INTERFACE" },
+																						 { DescriptorType::ClockSource, "CLOCK_SOURCE" },
+																						 { DescriptorType::MemoryObject, "MEMORY_OBJECT" },
+																						 { DescriptorType::Locale, "LOCALE" },
+																						 { DescriptorType::Strings, "STRINGS" },
+																						 { DescriptorType::StreamPortInput, "STREAM_PORT_INPUT" },
+																						 { DescriptorType::StreamPortOutput, "STREAM_PORT_OUTPUT" },
+																						 { DescriptorType::ExternalPortInput, "EXTERNAL_PORT_INPUT" },
+																						 { DescriptorType::ExternalPortOutput, "EXTERNAL_PORT_OUTPUT" },
+																						 { DescriptorType::InternalPortInput, "INTERNAL_PORT_INPUT" },
+																						 { DescriptorType::InternalPortOutput, "INTERNAL_PORT_OUTPUT" },
+																						 { DescriptorType::AudioCluster, "AUDIO_CLUSTER" },
+																						 { DescriptorType::VideoCluster, "VIDEO_CLUSTER" },
+																						 { DescriptorType::SensorCluster, "SENSOR_CLUSTER" },
+																						 { DescriptorType::AudioMap, "AUDIO_MAP" },
+																						 { DescriptorType::VideoMap, "VIDEO_MAP" },
+																						 { DescriptorType::SensorMap, "SENSOR_MAP" },
+																						 { DescriptorType::Control, "CONTROL" },
+																						 { DescriptorType::SignalSelector, "SIGNAL_SELECTOR" },
+																						 { DescriptorType::Mixer, "MIXER" },
+																						 { DescriptorType::Matrix, "MATRIX" },
+																						 { DescriptorType::MatrixSignal, "MATRIX_SIGNAL" },
+																						 { DescriptorType::SignalSplitter, "SIGNAL_SPLITTER" },
+																						 { DescriptorType::SignalCombiner, "SIGNAL_COMBINER" },
+																						 { DescriptorType::SignalDemultiplexer, "SIGNAL_DEMULTIPLEXER" },
+																						 { DescriptorType::SignalMultiplexer, "SIGNAL_MULTIPLEXER" },
+																						 { DescriptorType::SignalTranscoder, "SIGNAL_TRANSCODER" },
+																						 { DescriptorType::ClockDomain, "CLOCK_DOMAIN" },
+																						 { DescriptorType::ControlBlock, "CONTROL_BLOCK" },
+																						 { DescriptorType::Timing, "TIMING" },
+																						 { DescriptorType::PtpInstance, "PTP_INSTANCE" },
+																						 { DescriptorType::PtpPort, "PTP_PORT" },
+																					 });
 
 /* JackType conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(JackType, {
-																				 { JackType::Expansion, "EXPANSION" },
-																				 { JackType::Speaker, "SPEAKER" },
-																				 { JackType::Headphone, "HEADPHONE" },
-																				 { JackType::AnalogMicrophone, "ANALOG_MICROPHONE" },
-																				 { JackType::Spdif, "SPDIF" },
-																				 { JackType::Adat, "ADAT" },
-																				 { JackType::Tdif, "TDIF" },
-																				 { JackType::Madi, "MADI" },
-																				 { JackType::UnbalancedAnalog, "UNBALANCED_ANALOG" },
-																				 { JackType::BalancedAnalog, "BALANCED_ANALOG" },
-																				 { JackType::Digital, "DIGITAL" },
-																				 { JackType::Midi, "MIDI" },
-																				 { JackType::AesEbu, "AES_EBU" },
-																				 { JackType::CompositeVideo, "COMPOSITE_VIDEO" },
-																				 { JackType::SVhsVideo, "S_VHS_VIDEO" },
-																				 { JackType::ComponentVideo, "COMPONENT_VIDEO" },
-																				 { JackType::Dvi, "DVI" },
-																				 { JackType::Hdmi, "HDMI" },
-																				 { JackType::Udi, "UDI" },
-																				 { JackType::DisplayPort, "DISPLAYPORT" },
-																				 { JackType::Antenna, "ANTENNA" },
-																				 { JackType::AnalogTuner, "ANALOG_TUNER" },
-																				 { JackType::Ethernet, "ETHERNET" },
-																				 { JackType::Wifi, "WIFI" },
-																				 { JackType::Usb, "USB" },
-																				 { JackType::Pci, "PCI" },
-																				 { JackType::PciE, "PCI_E" },
-																				 { JackType::Scsi, "SCSI" },
-																				 { JackType::Ata, "ATA" },
-																				 { JackType::Imager, "IMAGER" },
-																				 { JackType::Ir, "IR" },
-																				 { JackType::Thunderbolt, "THUNDERBOLT" },
-																				 { JackType::Sata, "SATA" },
-																				 { JackType::SmpteLtc, "SMPTE_LTC" },
-																				 { JackType::DigitalMicrophone, "DIGITAL_MICROPHONE" },
-																				 { JackType::AudioMediaClock, "AUDIO_MEDIA_CLOCK" },
-																				 { JackType::VideoMediaClock, "VIDEO_MEDIA_CLOCK" },
-																				 { JackType::GnssClock, "GNSS_CLOCK" },
-																				 { JackType::Pps, "PPS" },
-																			 });
+AVDECC_JSON_SERIALIZE_ENUM(JackType, {
+																			 { JackType::Expansion, "EXPANSION" },
+																			 { JackType::Speaker, "SPEAKER" },
+																			 { JackType::Headphone, "HEADPHONE" },
+																			 { JackType::AnalogMicrophone, "ANALOG_MICROPHONE" },
+																			 { JackType::Spdif, "SPDIF" },
+																			 { JackType::Adat, "ADAT" },
+																			 { JackType::Tdif, "TDIF" },
+																			 { JackType::Madi, "MADI" },
+																			 { JackType::UnbalancedAnalog, "UNBALANCED_ANALOG" },
+																			 { JackType::BalancedAnalog, "BALANCED_ANALOG" },
+																			 { JackType::Digital, "DIGITAL" },
+																			 { JackType::Midi, "MIDI" },
+																			 { JackType::AesEbu, "AES_EBU" },
+																			 { JackType::CompositeVideo, "COMPOSITE_VIDEO" },
+																			 { JackType::SVhsVideo, "S_VHS_VIDEO" },
+																			 { JackType::ComponentVideo, "COMPONENT_VIDEO" },
+																			 { JackType::Dvi, "DVI" },
+																			 { JackType::Hdmi, "HDMI" },
+																			 { JackType::Udi, "UDI" },
+																			 { JackType::DisplayPort, "DISPLAYPORT" },
+																			 { JackType::Antenna, "ANTENNA" },
+																			 { JackType::AnalogTuner, "ANALOG_TUNER" },
+																			 { JackType::Ethernet, "ETHERNET" },
+																			 { JackType::Wifi, "WIFI" },
+																			 { JackType::Usb, "USB" },
+																			 { JackType::Pci, "PCI" },
+																			 { JackType::PciE, "PCI_E" },
+																			 { JackType::Scsi, "SCSI" },
+																			 { JackType::Ata, "ATA" },
+																			 { JackType::Imager, "IMAGER" },
+																			 { JackType::Ir, "IR" },
+																			 { JackType::Thunderbolt, "THUNDERBOLT" },
+																			 { JackType::Sata, "SATA" },
+																			 { JackType::SmpteLtc, "SMPTE_LTC" },
+																			 { JackType::DigitalMicrophone, "DIGITAL_MICROPHONE" },
+																			 { JackType::AudioMediaClock, "AUDIO_MEDIA_CLOCK" },
+																			 { JackType::VideoMediaClock, "VIDEO_MEDIA_CLOCK" },
+																			 { JackType::GnssClock, "GNSS_CLOCK" },
+																			 { JackType::Pps, "PPS" },
+																		 });
 
 /* ClockSourceType conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ClockSourceType, {
-																								{ ClockSourceType::Expansion, "EXPANSION" },
-																								{ ClockSourceType::Internal, "INTERNAL" },
-																								{ ClockSourceType::External, "EXTERNAL" },
-																								{ ClockSourceType::InputStream, "INPUT_STREAM" },
-																							});
+AVDECC_JSON_SERIALIZE_ENUM(ClockSourceType, {
+																							{ ClockSourceType::Expansion, "EXPANSION" },
+																							{ ClockSourceType::Internal, "INTERNAL" },
+																							{ ClockSourceType::External, "EXTERNAL" },
+																							{ ClockSourceType::InputStream, "INPUT_STREAM" },
+																						});
 
 /* MemoryObjectType conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(MemoryObjectType, {
-																								 { MemoryObjectType::FirmwareImage, "FIRMWARE_IMAGE" },
-																								 { MemoryObjectType::VendorSpecific, "VENDOR_SPECIFIC" },
-																								 { MemoryObjectType::CrashDump, "CRASH_DUMP" },
-																								 { MemoryObjectType::LogObject, "LOG_OBJECT" },
-																								 { MemoryObjectType::AutostartSettings, "AUTOSTART_SETTINGS" },
-																								 { MemoryObjectType::SnapshotSettings, "SNAPSHOT_SETTINGS" },
-																								 { MemoryObjectType::SvgManufacturer, "SVG_MANUFACTURER" },
-																								 { MemoryObjectType::SvgEntity, "SVG_ENTITY" },
-																								 { MemoryObjectType::SvgGeneric, "SVG_GENERIC" },
-																								 { MemoryObjectType::PngManufacturer, "PNG_MANUFACTURER" },
-																								 { MemoryObjectType::PngEntity, "PNG_ENTITY" },
-																								 { MemoryObjectType::PngGeneric, "PNG_GENERIC" },
-																								 { MemoryObjectType::DaeManufacturer, "DAE_MANUFACTURER" },
-																								 { MemoryObjectType::DaeEntity, "DAE_ENTITY" },
-																								 { MemoryObjectType::DaeGeneric, "DAE_GENERIC" },
-																							 });
+AVDECC_JSON_SERIALIZE_ENUM(MemoryObjectType, {
+																							 { MemoryObjectType::FirmwareImage, "FIRMWARE_IMAGE" },
+																							 { MemoryObjectType::VendorSpecific, "VENDOR_SPECIFIC" },
+																							 { MemoryObjectType::CrashDump, "CRASH_DUMP" },
+																							 { MemoryObjectType::LogObject, "LOG_OBJECT" },
+																							 { MemoryObjectType::AutostartSettings, "AUTOSTART_SETTINGS" },
+																							 { MemoryObjectType::SnapshotSettings, "SNAPSHOT_SETTINGS" },
+																							 { MemoryObjectType::SvgManufacturer, "SVG_MANUFACTURER" },
+																							 { MemoryObjectType::SvgEntity, "SVG_ENTITY" },
+																							 { MemoryObjectType::SvgGeneric, "SVG_GENERIC" },
+																							 { MemoryObjectType::PngManufacturer, "PNG_MANUFACTURER" },
+																							 { MemoryObjectType::PngEntity, "PNG_ENTITY" },
+																							 { MemoryObjectType::PngGeneric, "PNG_GENERIC" },
+																							 { MemoryObjectType::DaeManufacturer, "DAE_MANUFACTURER" },
+																							 { MemoryObjectType::DaeEntity, "DAE_ENTITY" },
+																							 { MemoryObjectType::DaeGeneric, "DAE_GENERIC" },
+																						 });
 
 /* AudioClusterFormat conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(AudioClusterFormat, {
-																									 { AudioClusterFormat::Iec60958, "IEC_60958" },
-																									 { AudioClusterFormat::Mbla, "MBLA" },
-																									 { AudioClusterFormat::Midi, "MIDI" },
-																									 { AudioClusterFormat::Smpte, "SMPTE" },
-																								 });
+AVDECC_JSON_SERIALIZE_ENUM(AudioClusterFormat, {
+																								 { AudioClusterFormat::Iec60958, "IEC_60958" },
+																								 { AudioClusterFormat::Mbla, "MBLA" },
+																								 { AudioClusterFormat::Midi, "MIDI" },
+																								 { AudioClusterFormat::Smpte, "SMPTE" },
+																							 });
 
 /* TimingAlgorithm conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(TimingAlgorithm, {
-																								{ TimingAlgorithm::Single, "SINGLE" },
-																								{ TimingAlgorithm::Fallback, "FALLBACK" },
-																								{ TimingAlgorithm::Combined, "COMBINED" },
-																							});
+AVDECC_JSON_SERIALIZE_ENUM(TimingAlgorithm, {
+																							{ TimingAlgorithm::Single, "SINGLE" },
+																							{ TimingAlgorithm::Fallback, "FALLBACK" },
+																							{ TimingAlgorithm::Combined, "COMBINED" },
+																						});
 
 /* PtpPortType conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(PtpPortType, {
-																						{ PtpPortType::P2PLinkLayer, "P2P_LINK_LAYER" },
-																						{ PtpPortType::P2PMulticastUdpV4, "P2P_MULTICAST_UDP_V4" },
-																						{ PtpPortType::P2PMulticastUdpV6, "P2P_MULTICAST_UDP_V6" },
-																						{ PtpPortType::TimingMeasurement, "TIMING_MEASUREMENT" },
-																						{ PtpPortType::FineTimingMeasurement, "FINE_TIMING_MEASUREMENT" },
-																						{ PtpPortType::E2ELinkLayer, "E2E_LINK_LAYER" },
-																						{ PtpPortType::E2EMulticastUdpV4, "E2E_MULTICAST_UDP_V4" },
-																						{ PtpPortType::E2EMulticastUdpV6, "E2E_MULTICAST_UDP_V6" },
-																						{ PtpPortType::P2PUnicastUdpV4, "P2P_UNICAST_UDP_V4" },
-																						{ PtpPortType::P2PUnicastUdpV6, "P2P_UNICAST_UDP_V6" },
-																						{ PtpPortType::E2EUnicastUdpV4, "E2E_UNICAST_UDP_V4" },
-																						{ PtpPortType::E2EUnicastUdpV6, "E2E_UNICAST_UDP_V6" },
-																					});
+AVDECC_JSON_SERIALIZE_ENUM(PtpPortType, {
+																					{ PtpPortType::P2PLinkLayer, "P2P_LINK_LAYER" },
+																					{ PtpPortType::P2PMulticastUdpV4, "P2P_MULTICAST_UDP_V4" },
+																					{ PtpPortType::P2PMulticastUdpV6, "P2P_MULTICAST_UDP_V6" },
+																					{ PtpPortType::TimingMeasurement, "TIMING_MEASUREMENT" },
+																					{ PtpPortType::FineTimingMeasurement, "FINE_TIMING_MEASUREMENT" },
+																					{ PtpPortType::E2ELinkLayer, "E2E_LINK_LAYER" },
+																					{ PtpPortType::E2EMulticastUdpV4, "E2E_MULTICAST_UDP_V4" },
+																					{ PtpPortType::E2EMulticastUdpV6, "E2E_MULTICAST_UDP_V6" },
+																					{ PtpPortType::P2PUnicastUdpV4, "P2P_UNICAST_UDP_V4" },
+																					{ PtpPortType::P2PUnicastUdpV6, "P2P_UNICAST_UDP_V6" },
+																					{ PtpPortType::E2EUnicastUdpV4, "E2E_UNICAST_UDP_V4" },
+																					{ PtpPortType::E2EUnicastUdpV6, "E2E_UNICAST_UDP_V6" },
+																				});
 
 /* ControlValueUnit::Unit conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ControlValueUnit::Unit, {
-																											 { ControlValueUnit::Unit::Unitless, "UNITLESS" },
-																											 { ControlValueUnit::Unit::Count, "COUNT" },
-																											 { ControlValueUnit::Unit::Percent, "PERCENT" },
-																											 { ControlValueUnit::Unit::FStop, "FSTOP" },
-																											 { ControlValueUnit::Unit::Seconds, "SECONDS" },
-																											 { ControlValueUnit::Unit::Minutes, "MINUTES" },
-																											 { ControlValueUnit::Unit::Hours, "HOURS" },
-																											 { ControlValueUnit::Unit::Days, "DAYS" },
-																											 { ControlValueUnit::Unit::Months, "MONTHS" },
-																											 { ControlValueUnit::Unit::Years, "YEARS" },
-																											 { ControlValueUnit::Unit::Samples, "SAMPLES" },
-																											 { ControlValueUnit::Unit::Frames, "FRAMES" },
-																											 { ControlValueUnit::Unit::Hertz, "HERTZ" },
-																											 { ControlValueUnit::Unit::Semitones, "SEMITONES" },
-																											 { ControlValueUnit::Unit::Cents, "CENTS" },
-																											 { ControlValueUnit::Unit::Octaves, "OCTAVES" },
-																											 { ControlValueUnit::Unit::Fps, "FPS" },
-																											 { ControlValueUnit::Unit::Metres, "METRES" },
-																											 { ControlValueUnit::Unit::Kelvin, "KELVIN" },
-																											 { ControlValueUnit::Unit::Grams, "GRAMS" },
-																											 { ControlValueUnit::Unit::Volts, "VOLTS" },
-																											 { ControlValueUnit::Unit::Dbv, "DBV" },
-																											 { ControlValueUnit::Unit::Dbu, "DBU" },
-																											 { ControlValueUnit::Unit::Amps, "AMPS" },
-																											 { ControlValueUnit::Unit::Watts, "WATTS" },
-																											 { ControlValueUnit::Unit::Dbm, "DBM" },
-																											 { ControlValueUnit::Unit::Dbw, "DBW" },
-																											 { ControlValueUnit::Unit::Pascals, "PASCALS" },
-																											 { ControlValueUnit::Unit::Bits, "BITS" },
-																											 { ControlValueUnit::Unit::Bytes, "BYTES" },
-																											 { ControlValueUnit::Unit::KibiBytes, "KIBIBYTES" },
-																											 { ControlValueUnit::Unit::MebiBytes, "MEBIBYTES" },
-																											 { ControlValueUnit::Unit::GibiBytes, "GIBIBYTES" },
-																											 { ControlValueUnit::Unit::TebiBytes, "TEBIBYTES" },
-																											 { ControlValueUnit::Unit::BitsPerSec, "BITS_PER_SEC" },
-																											 { ControlValueUnit::Unit::BytesPerSec, "BYTES_PER_SEC" },
-																											 { ControlValueUnit::Unit::KibiBytesPerSec, "KIBIBYTES_PER_SEC" },
-																											 { ControlValueUnit::Unit::MebiBytesPerSec, "MEBIBYTES_PER_SEC" },
-																											 { ControlValueUnit::Unit::GibiBytesPerSec, "GIBIBYTES_PER_SEC" },
-																											 { ControlValueUnit::Unit::TebiBytesPerSec, "TEBIBYTES_PER_SEC" },
-																											 { ControlValueUnit::Unit::Candelas, "CANDELAS" },
-																											 { ControlValueUnit::Unit::Joules, "JOULES" },
-																											 { ControlValueUnit::Unit::Radians, "RADIANS" },
-																											 { ControlValueUnit::Unit::Newtons, "NEWTONS" },
-																											 { ControlValueUnit::Unit::Ohms, "OHMS" },
-																											 { ControlValueUnit::Unit::MetresPerSec, "METRES_PER_SEC" },
-																											 { ControlValueUnit::Unit::RadiansPerSec, "RADIANS_PER_SEC" },
-																											 { ControlValueUnit::Unit::MetresPerSecSquared, "METRES_PER_SEC_SQUARED" },
-																											 { ControlValueUnit::Unit::RadiansPerSecSquared, "RADIANS_PER_SEC_SQUARED" },
-																											 { ControlValueUnit::Unit::Teslas, "TESLAS" },
-																											 { ControlValueUnit::Unit::Webers, "WEBERS" },
-																											 { ControlValueUnit::Unit::AmpsPerMetre, "AMPS_PER_METRE" },
-																											 { ControlValueUnit::Unit::MetresSquared, "METRES_SQUARED" },
-																											 { ControlValueUnit::Unit::MetresCubed, "METRES_CUBED" },
-																											 { ControlValueUnit::Unit::Litres, "LITRES" },
-																											 { ControlValueUnit::Unit::Db, "DB" },
-																											 { ControlValueUnit::Unit::DbPeak, "DB_PEAK" },
-																											 { ControlValueUnit::Unit::DbRms, "DB_RMS" },
-																											 { ControlValueUnit::Unit::Dbfs, "DBFS" },
-																											 { ControlValueUnit::Unit::DbfsPeak, "DBFS_PEAK" },
-																											 { ControlValueUnit::Unit::DbfsRms, "DBFS_RMS" },
-																											 { ControlValueUnit::Unit::Dbtp, "DBTP" },
-																											 { ControlValueUnit::Unit::DbSplA, "DB_SPL_A" },
-																											 { ControlValueUnit::Unit::DbZ, "DB_Z" },
-																											 { ControlValueUnit::Unit::DbSplC, "DB_SPL_C" },
-																											 { ControlValueUnit::Unit::DbSpl, "DB_SPL" },
-																											 { ControlValueUnit::Unit::Lu, "LU" },
-																											 { ControlValueUnit::Unit::Lufs, "LUFS" },
-																											 { ControlValueUnit::Unit::DbA, "DB_A" },
-																										 });
+AVDECC_JSON_SERIALIZE_ENUM(ControlValueUnit::Unit, {
+																										 { ControlValueUnit::Unit::Unitless, "UNITLESS" },
+																										 { ControlValueUnit::Unit::Count, "COUNT" },
+																										 { ControlValueUnit::Unit::Percent, "PERCENT" },
+																										 { ControlValueUnit::Unit::FStop, "FSTOP" },
+																										 { ControlValueUnit::Unit::Seconds, "SECONDS" },
+																										 { ControlValueUnit::Unit::Minutes, "MINUTES" },
+																										 { ControlValueUnit::Unit::Hours, "HOURS" },
+																										 { ControlValueUnit::Unit::Days, "DAYS" },
+																										 { ControlValueUnit::Unit::Months, "MONTHS" },
+																										 { ControlValueUnit::Unit::Years, "YEARS" },
+																										 { ControlValueUnit::Unit::Samples, "SAMPLES" },
+																										 { ControlValueUnit::Unit::Frames, "FRAMES" },
+																										 { ControlValueUnit::Unit::Hertz, "HERTZ" },
+																										 { ControlValueUnit::Unit::Semitones, "SEMITONES" },
+																										 { ControlValueUnit::Unit::Cents, "CENTS" },
+																										 { ControlValueUnit::Unit::Octaves, "OCTAVES" },
+																										 { ControlValueUnit::Unit::Fps, "FPS" },
+																										 { ControlValueUnit::Unit::Metres, "METRES" },
+																										 { ControlValueUnit::Unit::Kelvin, "KELVIN" },
+																										 { ControlValueUnit::Unit::Grams, "GRAMS" },
+																										 { ControlValueUnit::Unit::Volts, "VOLTS" },
+																										 { ControlValueUnit::Unit::Dbv, "DBV" },
+																										 { ControlValueUnit::Unit::Dbu, "DBU" },
+																										 { ControlValueUnit::Unit::Amps, "AMPS" },
+																										 { ControlValueUnit::Unit::Watts, "WATTS" },
+																										 { ControlValueUnit::Unit::Dbm, "DBM" },
+																										 { ControlValueUnit::Unit::Dbw, "DBW" },
+																										 { ControlValueUnit::Unit::Pascals, "PASCALS" },
+																										 { ControlValueUnit::Unit::Bits, "BITS" },
+																										 { ControlValueUnit::Unit::Bytes, "BYTES" },
+																										 { ControlValueUnit::Unit::KibiBytes, "KIBIBYTES" },
+																										 { ControlValueUnit::Unit::MebiBytes, "MEBIBYTES" },
+																										 { ControlValueUnit::Unit::GibiBytes, "GIBIBYTES" },
+																										 { ControlValueUnit::Unit::TebiBytes, "TEBIBYTES" },
+																										 { ControlValueUnit::Unit::BitsPerSec, "BITS_PER_SEC" },
+																										 { ControlValueUnit::Unit::BytesPerSec, "BYTES_PER_SEC" },
+																										 { ControlValueUnit::Unit::KibiBytesPerSec, "KIBIBYTES_PER_SEC" },
+																										 { ControlValueUnit::Unit::MebiBytesPerSec, "MEBIBYTES_PER_SEC" },
+																										 { ControlValueUnit::Unit::GibiBytesPerSec, "GIBIBYTES_PER_SEC" },
+																										 { ControlValueUnit::Unit::TebiBytesPerSec, "TEBIBYTES_PER_SEC" },
+																										 { ControlValueUnit::Unit::Candelas, "CANDELAS" },
+																										 { ControlValueUnit::Unit::Joules, "JOULES" },
+																										 { ControlValueUnit::Unit::Radians, "RADIANS" },
+																										 { ControlValueUnit::Unit::Newtons, "NEWTONS" },
+																										 { ControlValueUnit::Unit::Ohms, "OHMS" },
+																										 { ControlValueUnit::Unit::MetresPerSec, "METRES_PER_SEC" },
+																										 { ControlValueUnit::Unit::RadiansPerSec, "RADIANS_PER_SEC" },
+																										 { ControlValueUnit::Unit::MetresPerSecSquared, "METRES_PER_SEC_SQUARED" },
+																										 { ControlValueUnit::Unit::RadiansPerSecSquared, "RADIANS_PER_SEC_SQUARED" },
+																										 { ControlValueUnit::Unit::Teslas, "TESLAS" },
+																										 { ControlValueUnit::Unit::Webers, "WEBERS" },
+																										 { ControlValueUnit::Unit::AmpsPerMetre, "AMPS_PER_METRE" },
+																										 { ControlValueUnit::Unit::MetresSquared, "METRES_SQUARED" },
+																										 { ControlValueUnit::Unit::MetresCubed, "METRES_CUBED" },
+																										 { ControlValueUnit::Unit::Litres, "LITRES" },
+																										 { ControlValueUnit::Unit::Db, "DB" },
+																										 { ControlValueUnit::Unit::DbPeak, "DB_PEAK" },
+																										 { ControlValueUnit::Unit::DbRms, "DB_RMS" },
+																										 { ControlValueUnit::Unit::Dbfs, "DBFS" },
+																										 { ControlValueUnit::Unit::DbfsPeak, "DBFS_PEAK" },
+																										 { ControlValueUnit::Unit::DbfsRms, "DBFS_RMS" },
+																										 { ControlValueUnit::Unit::Dbtp, "DBTP" },
+																										 { ControlValueUnit::Unit::DbSplA, "DB_SPL_A" },
+																										 { ControlValueUnit::Unit::DbZ, "DB_Z" },
+																										 { ControlValueUnit::Unit::DbSplC, "DB_SPL_C" },
+																										 { ControlValueUnit::Unit::DbSpl, "DB_SPL" },
+																										 { ControlValueUnit::Unit::Lu, "LU" },
+																										 { ControlValueUnit::Unit::Lufs, "LUFS" },
+																										 { ControlValueUnit::Unit::DbA, "DB_A" },
+																									 });
 
 /* ControlValueType::Type conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(ControlValueType::Type, {
-																											 { ControlValueType::Type::ControlLinearInt8, "CONTROL_LINEAR_INT8" },
-																											 { ControlValueType::Type::ControlLinearUInt8, "CONTROL_LINEAR_UINT8" },
-																											 { ControlValueType::Type::ControlLinearInt16, "CONTROL_LINEAR_INT16" },
-																											 { ControlValueType::Type::ControlLinearUInt16, "CONTROL_LINEAR_UINT16" },
-																											 { ControlValueType::Type::ControlLinearInt32, "CONTROL_LINEAR_INT32" },
-																											 { ControlValueType::Type::ControlLinearUInt32, "CONTROL_LINEAR_UINT32" },
-																											 { ControlValueType::Type::ControlLinearInt64, "CONTROL_LINEAR_INT64" },
-																											 { ControlValueType::Type::ControlLinearUInt64, "CONTROL_LINEAR_UINT64" },
-																											 { ControlValueType::Type::ControlLinearFloat, "CONTROL_LINEAR_FLOAT" },
-																											 { ControlValueType::Type::ControlLinearDouble, "CONTROL_LINEAR_DOUBLE" },
-																											 { ControlValueType::Type::ControlSelectorInt8, "CONTROL_SELECTOR_INT8" },
-																											 { ControlValueType::Type::ControlSelectorUInt8, "CONTROL_SELECTOR_UINT8" },
-																											 { ControlValueType::Type::ControlSelectorInt16, "CONTROL_SELECTOR_INT16" },
-																											 { ControlValueType::Type::ControlSelectorUInt16, "CONTROL_SELECTOR_UINT16" },
-																											 { ControlValueType::Type::ControlSelectorInt32, "CONTROL_SELECTOR_INT32" },
-																											 { ControlValueType::Type::ControlSelectorUInt32, "CONTROL_SELECTOR_UINT32" },
-																											 { ControlValueType::Type::ControlSelectorInt64, "CONTROL_SELECTOR_INT64" },
-																											 { ControlValueType::Type::ControlSelectorUInt64, "CONTROL_SELECTOR_UINT64" },
-																											 { ControlValueType::Type::ControlSelectorFloat, "CONTROL_SELECTOR_FLOAT" },
-																											 { ControlValueType::Type::ControlSelectorDouble, "CONTROL_SELECTOR_DOUBLE" },
-																											 { ControlValueType::Type::ControlSelectorString, "CONTROL_SELECTOR_STRING" },
-																											 { ControlValueType::Type::ControlArrayInt8, "CONTROL_ARRAY_INT8" },
-																											 { ControlValueType::Type::ControlArrayUInt8, "CONTROL_ARRAY_UINT8" },
-																											 { ControlValueType::Type::ControlArrayInt16, "CONTROL_ARRAY_INT16" },
-																											 { ControlValueType::Type::ControlArrayUInt16, "CONTROL_ARRAY_UINT16" },
-																											 { ControlValueType::Type::ControlArrayInt32, "CONTROL_ARRAY_INT32" },
-																											 { ControlValueType::Type::ControlArrayUInt32, "CONTROL_ARRAY_UINT32" },
-																											 { ControlValueType::Type::ControlArrayInt64, "CONTROL_ARRAY_INT64" },
-																											 { ControlValueType::Type::ControlArrayUInt64, "CONTROL_ARRAY_UINT64" },
-																											 { ControlValueType::Type::ControlArrayFloat, "CONTROL_ARRAY_FLOAT" },
-																											 { ControlValueType::Type::ControlArrayDouble, "CONTROL_ARRAY_DOUBLE" },
-																											 { ControlValueType::Type::ControlUtf8, "CONTROL_UTF8" },
-																											 { ControlValueType::Type::ControlBodePlot, "CONTROL_BODE_PLOT" },
-																											 { ControlValueType::Type::ControlSmpteTime, "CONTROL_SMPTE_TIME" },
-																											 { ControlValueType::Type::ControlSampleRate, "CONTROL_SAMPLE_RATE" },
-																											 { ControlValueType::Type::ControlGptpTime, "CONTROL_GPTP_TIME" },
-																											 { ControlValueType::Type::ControlVendor, "CONTROL_VENDOR" },
-																											 { ControlValueType::Type::Expansion, "EXPANSION" },
-																										 });
+AVDECC_JSON_SERIALIZE_ENUM(ControlValueType::Type, {
+																										 { ControlValueType::Type::ControlLinearInt8, "CONTROL_LINEAR_INT8" }, { ControlValueType::Type::ControlLinearUInt8, "CONTROL_LINEAR_UINT8" }, { ControlValueType::Type::ControlLinearInt16, "CONTROL_LINEAR_INT16" }, { ControlValueType::Type::ControlLinearUInt16, "CONTROL_LINEAR_UINT16" }, { ControlValueType::Type::ControlLinearInt32, "CONTROL_LINEAR_INT32" }, { ControlValueType::Type::ControlLinearUInt32, "CONTROL_LINEAR_UINT32" }, { ControlValueType::Type::ControlLinearInt64, "CONTROL_LINEAR_INT64" }, { ControlValueType::Type::ControlLinearUInt64, "CONTROL_LINEAR_UINT64" }, { ControlValueType::Type::ControlLinearFloat, "CONTROL_LINEAR_FLOAT" }, { ControlValueType::Type::ControlLinearDouble, "CONTROL_LINEAR_DOUBLE" },
+																										 { ControlValueType::Type::ControlSelectorInt8, "CONTROL_SELECTOR_INT8" }, { ControlValueType::Type::ControlSelectorUInt8, "CONTROL_SELECTOR_UINT8" }, { ControlValueType::Type::ControlSelectorInt16, "CONTROL_SELECTOR_INT16" }, { ControlValueType::Type::ControlSelectorUInt16, "CONTROL_SELECTOR_UINT16" }, { ControlValueType::Type::ControlSelectorInt32, "CONTROL_SELECTOR_INT32" }, { ControlValueType::Type::ControlSelectorUInt32, "CONTROL_SELECTOR_UINT32" }, { ControlValueType::Type::ControlSelectorInt64, "CONTROL_SELECTOR_INT64" }, { ControlValueType::Type::ControlSelectorUInt64, "CONTROL_SELECTOR_UINT64" }, { ControlValueType::Type::ControlSelectorFloat, "CONTROL_SELECTOR_FLOAT" },
+																										 { ControlValueType::Type::ControlSelectorDouble, "CONTROL_SELECTOR_DOUBLE" }, { ControlValueType::Type::ControlSelectorString, "CONTROL_SELECTOR_STRING" }, { ControlValueType::Type::ControlArrayInt8, "CONTROL_ARRAY_INT8" }, { ControlValueType::Type::ControlArrayUInt8, "CONTROL_ARRAY_UINT8" }, { ControlValueType::Type::ControlArrayInt16, "CONTROL_ARRAY_INT16" }, { ControlValueType::Type::ControlArrayUInt16, "CONTROL_ARRAY_UINT16" }, { ControlValueType::Type::ControlArrayInt32, "CONTROL_ARRAY_INT32" }, { ControlValueType::Type::ControlArrayUInt32, "CONTROL_ARRAY_UINT32" }, { ControlValueType::Type::ControlArrayInt64, "CONTROL_ARRAY_INT64" }, { ControlValueType::Type::ControlArrayUInt64, "CONTROL_ARRAY_UINT64" },
+																										 { ControlValueType::Type::ControlArrayFloat, "CONTROL_ARRAY_FLOAT" }, { ControlValueType::Type::ControlArrayDouble, "CONTROL_ARRAY_DOUBLE" }, { ControlValueType::Type::ControlUtf8, "CONTROL_UTF8" }, { ControlValueType::Type::ControlBodePlot, "CONTROL_BODE_PLOT" }, { ControlValueType::Type::ControlSmpteTime, "CONTROL_SMPTE_TIME" }, { ControlValueType::Type::ControlSampleRate, "CONTROL_SAMPLE_RATE" }, { ControlValueType::Type::ControlGptpTime, "CONTROL_GPTP_TIME" }, { ControlValueType::Type::ControlVendor, "CONTROL_VENDOR" }, { ControlValueType::Type::Expansion, "EXPANSION" }, { ControlValueType::Type::Expansion, "EXAPNSION" }, // Legacy name (typo), for compatibility with older files
+																									 });
 
 /* StreamInputConnectionInfo::State conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(StreamInputConnectionInfo::State, {
-																																 { StreamInputConnectionInfo::State::NotConnected, "NOT_CONNECTED" },
-																																 { StreamInputConnectionInfo::State::FastConnecting, "FAST_CONNECTING" },
-																																 { StreamInputConnectionInfo::State::Connected, "CONNECTED" },
-																															 });
+AVDECC_JSON_SERIALIZE_ENUM(StreamInputConnectionInfo::State, {
+																															 { StreamInputConnectionInfo::State::NotConnected, "NOT_CONNECTED" },
+																															 { StreamInputConnectionInfo::State::FastConnecting, "FAST_CONNECTING" },
+																															 { StreamInputConnectionInfo::State::Connected, "CONNECTED" },
+																														 });
 
 /* MsrpFailureCode conversion */
-NLOHMANN_JSON_SERIALIZE_ENUM(MsrpFailureCode, {
-																								{ MsrpFailureCode::NoFailure, "NO_FAILURE" },
-																								{ MsrpFailureCode::InsufficientBandwidth, "INSUFFICIENT_BANDWIDTH" },
-																								{ MsrpFailureCode::InsufficientResources, "INSUFFICIENT_RESOURCES" },
-																								{ MsrpFailureCode::InsufficientTrafficClassBandwidth, "INSUFFICIENT_TRAFFIC_CLASS_BANDWIDTH" },
-																								{ MsrpFailureCode::StreamIDInUse, "STREAM_ID_IN_USE" },
-																								{ MsrpFailureCode::StreamDestinationAddressInUse, "STREAM_DESTINATION_ADDRESS_IN_USE" },
-																								{ MsrpFailureCode::StreamPreemptedByHigherRank, "STREAM_PREEMPTED_BY_HIGHER_RANK" },
-																								{ MsrpFailureCode::LatencyHasChanged, "LATENCY_HAS_CHANGED" },
-																								{ MsrpFailureCode::EgressPortNotAVBCapable, "EGRESS_PORT_NOT_AVB_CAPABLE" },
-																								{ MsrpFailureCode::UseDifferentDestinationAddress, "USE_DIFFERENT_DESTINATION_ADDRESS" },
-																								{ MsrpFailureCode::OutOfMSRPResources, "OUT_OF_MSRP_RESOURCES" },
-																								{ MsrpFailureCode::OutOfMMRPResources, "OUT_OF_MMRP_RESOURCES" },
-																								{ MsrpFailureCode::CannotStoreDestinationAddress, "CANNOT_STORE_DESTINATION_ADDRESS" },
-																								{ MsrpFailureCode::PriorityIsNotAnSRClass, "PRIORITY_IS_NOT_AN_SR_CLASS" },
-																								{ MsrpFailureCode::MaxFrameSizeTooLarge, "MAX_FRAME_SIZE_TOO_LARGE" },
-																								{ MsrpFailureCode::MaxFanInPortsLimitReached, "MAX_FAN_IN_PORTS_LIMIT_REACHED" },
-																								{ MsrpFailureCode::FirstValueChangedForStreamID, "FIRST_VALUE_CHANGED_FOR_STREAM_ID" },
-																								{ MsrpFailureCode::VlanBlockedOnEgress, "VLAN_BLOCKED_ON_EGRESS" },
-																								{ MsrpFailureCode::VlanTaggingDisabledOnEgress, "VLAN_TAGGING_DISABLED_ON_EGRESS" },
-																								{ MsrpFailureCode::SrClassPriorityMismatch, "SR_CLASS_PRIORITY_MISMATCH" },
-																							});
+AVDECC_JSON_SERIALIZE_ENUM(MsrpFailureCode, {
+																							{ MsrpFailureCode::NoFailure, "NO_FAILURE" },
+																							{ MsrpFailureCode::InsufficientBandwidth, "INSUFFICIENT_BANDWIDTH" },
+																							{ MsrpFailureCode::InsufficientResources, "INSUFFICIENT_RESOURCES" },
+																							{ MsrpFailureCode::InsufficientTrafficClassBandwidth, "INSUFFICIENT_TRAFFIC_CLASS_BANDWIDTH" },
+																							{ MsrpFailureCode::StreamIDInUse, "STREAM_ID_IN_USE" },
+																							{ MsrpFailureCode::StreamDestinationAddressInUse, "STREAM_DESTINATION_ADDRESS_IN_USE" },
+																							{ MsrpFailureCode::StreamPreemptedByHigherRank, "STREAM_PREEMPTED_BY_HIGHER_RANK" },
+																							{ MsrpFailureCode::LatencyHasChanged, "LATENCY_HAS_CHANGED" },
+																							{ MsrpFailureCode::EgressPortNotAVBCapable, "EGRESS_PORT_NOT_AVB_CAPABLE" },
+																							{ MsrpFailureCode::UseDifferentDestinationAddress, "USE_DIFFERENT_DESTINATION_ADDRESS" },
+																							{ MsrpFailureCode::OutOfMSRPResources, "OUT_OF_MSRP_RESOURCES" },
+																							{ MsrpFailureCode::OutOfMMRPResources, "OUT_OF_MMRP_RESOURCES" },
+																							{ MsrpFailureCode::CannotStoreDestinationAddress, "CANNOT_STORE_DESTINATION_ADDRESS" },
+																							{ MsrpFailureCode::PriorityIsNotAnSRClass, "PRIORITY_IS_NOT_AN_SR_CLASS" },
+																							{ MsrpFailureCode::MaxFrameSizeTooLarge, "MAX_FRAME_SIZE_TOO_LARGE" },
+																							{ MsrpFailureCode::MaxFanInPortsLimitReached, "MAX_FAN_IN_PORTS_LIMIT_REACHED" },
+																							{ MsrpFailureCode::FirstValueChangedForStreamID, "FIRST_VALUE_CHANGED_FOR_STREAM_ID" },
+																							{ MsrpFailureCode::VlanBlockedOnEgress, "VLAN_BLOCKED_ON_EGRESS" },
+																							{ MsrpFailureCode::VlanTaggingDisabledOnEgress, "VLAN_TAGGING_DISABLED_ON_EGRESS" },
+																							{ MsrpFailureCode::SrClassPriorityMismatch, "SR_CLASS_PRIORITY_MISMATCH" },
+																						});
 
 /* SamplingRate conversion */
 inline void to_json(json& j, SamplingRate const& sr)
@@ -1652,7 +1623,43 @@ inline void from_json(json const& j, LocalizedStringReference& ref)
 /* AvdeccFixedString conversion */
 inline void to_json(json& j, AvdeccFixedString const& str)
 {
-	j = str.str();
+	auto const s = str.str();
+
+	// An AvdeccFixedString should be a valid UTF-8 string, but some entities don't respect this.
+	// A JSON string must be a valid UTF-8 string, so serialize the raw bytes instead (as an array of numbers) so no information is lost (and the JSON can still be dumped)
+	if (!la::avdecc::jsonSerializer::detail::isValidUtf8String(s))
+	{
+		logJsonSerializer(la::avdecc::logger::Level::Warn, "AvdeccFixedString is not a valid UTF-8 string, serializing as an array of bytes");
+		auto arr = json::array();
+		for (auto const c : s)
+		{
+			arr.push_back(static_cast<std::uint8_t>(c));
+		}
+		j = std::move(arr);
+		return;
+	}
+
+	j = s;
+}
+inline void from_json(json const& j, AvdeccFixedString& str)
+{
+	// Not a valid UTF-8 string, raw bytes serialized as an array of numbers
+	if (j.is_array())
+	{
+		auto bytes = std::string{};
+		for (auto const& b : j)
+		{
+			if (!b.is_number_integer() || b.get<std::int64_t>() < 0 || b.get<std::int64_t>() > std::numeric_limits<std::uint8_t>::max())
+			{
+				throw json::type_error::create(302, std::string("Unsupported AvdeccFixedString byte value: ") + b.dump(), &b);
+			}
+			bytes.push_back(static_cast<std::string::value_type>(b.get<std::uint8_t>()));
+		}
+		str.assign(bytes);
+		return;
+	}
+
+	str.assign(j.get<std::string>());
 }
 
 /* MsrpMapping conversion */

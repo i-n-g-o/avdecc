@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - Automatic command auto-retry on the alternate physical interface for transient transport-class errors (AEM/AA/MVU: `TimedOut`, `UnknownEntity`, `NetworkError`; ACMP: `TimedOut`, `ListenerUnknownID`, `TalkerUnknownID`, `NetworkError`)
   - C# bindings updated accordingly (new `InterfaceType` enum, `InterfaceConfiguration`, and `createRedundant` factory)
 - Validation of the audio mappings (static and dynamic) of the enumerated entities: a mapping referencing a Stream, an Audio Cluster or an Audio Cluster channel that does not exist flags the entity as Misbehaving (as already done for the mappings received in a notification), a dangling mapping (stream channel not existing in the current format of the Stream) removes the Milan compatibility of an entity up to Milan 1.3. The mappings are kept in the model so they can be displayed
+- JSON schema for the entity dump version 3 (`resources/schemas/AVE/v3`) and for the network state dump (`resources/schemas/ANS/v1`), describing all the sections of the dumps (including the dynamic part of the entity model)
+- Network state dump referencing its JSON schema (`$schema` key), as already done for the entity dump
 
 ### Changed
 - **API break** (see doc/MIGRATION-5.0.md): per-interface events paradigm — in dual-interface mode it is the observer's responsibility to track per-interface states (in single-interface mode the new parameter is always `InterfaceType::Primary` and the behavior is unchanged)
@@ -35,6 +37,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 - Compatibility change events not recorded for the changes detected while validating an entity (end of the enumeration, or loading of a virtual entity), they were only logged
 - Misbehaving compatibility change recorded as a simple loss of the IEEE1722.1 compatibility (the event did not include the Misbehaving flag), and notified twice to the observers
 - `Controller::Observer::onAecpResponseAverageTimeChanged` never notified
+- Crash when saving an entity dump (text format) containing a string that is not a valid UTF-8 string, an error is now returned (and the file is not altered)
 
 ## [4.3.1] - 2025-12-19
 ### Fixed
