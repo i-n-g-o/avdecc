@@ -142,6 +142,7 @@ namespace keyName
 {
 /* Controller nodes */
 constexpr auto Controller_DumpVersion = "dump_version";
+constexpr auto Controller_Schema = "$schema";
 constexpr auto Controller_Entities = "entities";
 constexpr auto Controller_Informative_DumpSource = "_dump_source (informative)";
 
@@ -166,6 +167,7 @@ namespace keyValue
 {
 /* Controller nodes */
 constexpr auto Controller_DumpVersion = std::uint32_t{ 1 };
+constexpr auto Controller_SchemaBaseURL = "https://raw.githubusercontent.com/L-Acoustics/avdecc/refs/heads/main/resources/schemas/ANS/";
 
 /* ControlledEntity nodes */
 constexpr auto ControlledEntity_DumpVersion = std::uint32_t{ 3 };

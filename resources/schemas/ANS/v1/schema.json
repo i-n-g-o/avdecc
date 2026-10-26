@@ -5,6 +5,9 @@
 	"type": "object",
 	"schema_version": "2026.10.23",
 	"properties": {
+		"$schema": {
+			"type": "string"
+		},
 		"_dump_source (informative)": {
 			"type": "string",
 			"description": "Name and Version of the tool used to generate the dump."

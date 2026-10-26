@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
   - C# bindings updated accordingly (new `InterfaceType` enum, `InterfaceConfiguration`, and `createRedundant` factory)
 - Validation of the audio mappings (static and dynamic) of the enumerated entities: a mapping referencing a Stream, an Audio Cluster or an Audio Cluster channel that does not exist flags the entity as Misbehaving (as already done for the mappings received in a notification), a dangling mapping (stream channel not existing in the current format of the Stream) removes the Milan compatibility of an entity up to Milan 1.3. The mappings are kept in the model so they can be displayed
 - JSON schema for the entity dump version 3 (`resources/schemas/AVE/v3`) and for the network state dump (`resources/schemas/ANS/v1`), describing all the sections of the dumps (including the dynamic part of the entity model)
+- Network state dump referencing its JSON schema (`$schema` key), as already done for the entity dump
 
 ### Changed
 - **API break** (see doc/MIGRATION-5.0.md): per-interface events paradigm — in dual-interface mode it is the observer's responsibility to track per-interface states (in single-interface mode the new parameter is always `InterfaceType::Primary` and the behavior is unchanged)

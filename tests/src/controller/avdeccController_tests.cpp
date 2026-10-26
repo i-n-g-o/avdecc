@@ -872,6 +872,33 @@ TEST(Controller, JsonDumpOfInvalidUtf8String)
 	std::filesystem::remove(filePath);
 }
 
+/*
+ * Network state dump: the schema of the dump must be referenced (as for an entity dump).
+ */
+TEST(Controller, NetworkStateJsonDumpSchema)
+{
+	auto const flags = la::avdecc::entity::model::jsonSerializer::Flags{ la::avdecc::entity::model::jsonSerializer::Flag::IgnoreAEMSanityChecks, la::avdecc::entity::model::jsonSerializer::Flag::ProcessADP, la::avdecc::entity::model::jsonSerializer::Flag::ProcessCompatibility, la::avdecc::entity::model::jsonSerializer::Flag::ProcessDynamicModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessMilan, la::avdecc::entity::model::jsonSerializer::Flag::ProcessState, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStaticModel, la::avdecc::entity::model::jsonSerializer::Flag::ProcessStatistics };
+	auto const dumpPath = std::filesystem::temp_directory_path() / "NetworkStateDump.json";
+
+	auto controller = la::avdecc::controller::Controller::create(la::avdecc::protocol::ProtocolInterface::Type::Virtual, "VirtualInterface", 0x0001, la::avdecc::UniqueIdentifier{}, "en", nullptr, std::nullopt, nullptr);
+	{
+		auto const [loadError, loadMessage] = controller->loadVirtualEntityFromJson("data/SimpleEntity.json", flags);
+		ASSERT_EQ(la::avdecc::jsonSerializer::DeserializationError::NoError, loadError) << loadMessage;
+	}
+	{
+		auto const [dumpError, dumpMessage] = controller->serializeAllControlledEntitiesAsJson(dumpPath.string(), flags, "unit test", false);
+		ASSERT_EQ(la::avdecc::jsonSerializer::SerializationError::NoError, dumpError) << dumpMessage;
+	}
+
+	{
+		auto ifs = std::ifstream{ dumpPath };
+		auto const dump = nlohmann::json::parse(ifs);
+		EXPECT_EQ("https://raw.githubusercontent.com/L-Acoustics/avdecc/refs/heads/main/resources/schemas/ANS/v1/schema.json", dump.at("$schema"));
+	}
+
+	std::filesystem::remove(dumpPath);
+}
+
 namespace
 {
 class Builder : public la::avdecc::controller::model::DefaultedVirtualEntityBuilder

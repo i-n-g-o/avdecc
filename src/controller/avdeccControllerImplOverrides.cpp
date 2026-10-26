@@ -3479,6 +3479,7 @@ std::tuple<avdecc::jsonSerializer::SerializationError, std::string> ControllerIm
 
 	// Dump information of the dump itself
 	object[jsonSerializer::keyName::Controller_DumpVersion] = jsonSerializer::keyValue::Controller_DumpVersion;
+	object[jsonSerializer::keyName::Controller_Schema] = std::string{ jsonSerializer::keyValue::Controller_SchemaBaseURL } + "v" + std::to_string(jsonSerializer::keyValue::Controller_DumpVersion) + "/schema.json";
 	object[jsonSerializer::keyName::Controller_Informative_DumpSource] = dumpSource;
 
 	// Lock to protect _controlledEntities
