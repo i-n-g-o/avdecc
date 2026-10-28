@@ -3395,6 +3395,12 @@ void ControllerImpl::onGetStreamInputInfoExResult(entity::controller::Interface 
 					notifyObserversMethod<Controller::Observer>(&Controller::Observer::onEntityQueryError, this, controlledEntity.get(), QueryCommandError::GetStreamInputInfoEx);
 					return;
 				}
+
+				// GET_STREAM_INPUT_INFO_EX definitely failed (no retry scheduled), fallback to RX_STATE to at least get the connection state of the stream
+				if (!controlledEntity->isDynamicInfoExpected(configurationIndex, ControlledEntityImpl::DynamicInfoType::InputStreamInfoEx, streamIndex))
+				{
+					queryInformation(controlledEntity.get(), configurationIndex, ControlledEntityImpl::DynamicInfoType::InputStreamState, streamIndex);
+				}
 			}
 
 			// Got all expected dynamic information
